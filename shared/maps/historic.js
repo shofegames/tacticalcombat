@@ -12,7 +12,7 @@ export function buildHistoric() {
     env: {
       sky: { elevation: 14, azimuth: 120, turbidity: 14, rayleigh: 1.2 },
       sunColor: 0xe6dccb, sunIntensity: 2.3, ambient: 0x9aa39a, ambientIntensity: 0.95,
-      fog: 0xa9ada3, fogDensity: 0.016, exposure: 0.82, ambience: 'battlefield', reverb: 2.2, dust: 0xcfd2c4,
+      fog: 0x8e938a, fogDensity: 0.011, exposure: 0.68, ambience: 'battlefield', reverb: 2.2, dust: 0xcfd2c4,
     },
   });
   const P = (fn) => { fn(1); fn(-1); };

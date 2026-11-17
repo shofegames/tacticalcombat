@@ -63,6 +63,8 @@ class Gun {
     _m.compose(_p.set(x, y, z), _q.setFromEuler(_e.set(rx, ry, rz)), _s.set(r, len, r)); this._add(cylG(r2 / r, seg), mat, part); return this;
   }
   set(k, v) { this.meta[k] = v; return this; }
+  /** Punto de giro de una pieza animable (p. ej. eje del cerrojo). */
+  pivot(part, v) { (this.pivots ||= {})[part] = v; return this; }
   build() {
     const root = new THREE.Group(), groups = { main: root };
     for (const { part, mat, list } of this.parts.values()) {
@@ -70,10 +72,13 @@ class Gun {
       const mesh = new THREE.Mesh(mergeGeometries(list, false), wmat(mat, this.finish));
       list.forEach((g) => g.dispose());
       mesh.castShadow = false; mesh.receiveShadow = false;
+      const pv = this.pivots && this.pivots[part];
+      if (pv) { groups[part].position.set(pv[0], pv[1], pv[2]); mesh.position.set(-pv[0], -pv[1], -pv[2]); }
       groups[part].add(mesh);
     }
     const u = root.userData;
     u.parts = groups;
+    for (const k in groups) if (k !== 'main') groups[k].userData.base = groups[k].position.clone();
     for (const k of ['muzzle', 'eject', 'sight', 'left']) u[k] = new THREE.Vector3(...this.meta[k]);
     u.adsDist = this.meta.adsDist; u.magPos = this.meta.magPos ? new THREE.Vector3(...this.meta.magPos) : u.left.clone();
     u.leftOnPump = !!this.meta.leftOnPump; u.boltHand = this.meta.boltHand ? new THREE.Vector3(...this.meta.boltHand) : null;
@@ -257,7 +262,7 @@ const MODELS = {
     g.box(0.006, 0.14, 0.006, -0.03, -0.07, -0.5, 'dark', 'main', 0, 0, 0.25); g.box(0.006, 0.14, 0.006, 0.03, -0.07, -0.5, 'dark', 'main', 0, 0, -0.25); // bípode
     scope(g, 0.118, -0.03, 0.3, 0.021);
     g.set('muzzle', [0, 0.06, -0.79]).set('eject', [0.03, 0.065, 0.0]).set('sight', [0, 0.118, 0.14]).set('left', [-0.005, -0.02, -0.33])
-      .set('magPos', [0, -0.08, -0.1]).set('boltHand', [0.06, 0.035, 0.14]).set('adsDist', 0.1);
+      .set('magPos', [0, -0.08, -0.1]).set('boltHand', [0.06, 0.035, 0.14]).set('adsDist', 0.1).pivot('bolt', [0, 0.06, 0]);
   },
   sentinel(g) {
     g.box(0.042, 0.055, 0.24, 0, 0.042, -0.03, 'body'); g.box(0.038, 0.035, 0.16, 0, 0.01, -0.01, 'body');
@@ -337,7 +342,7 @@ const MODELS = {
     g.cyl(0.006, 0.06, 0.035, 0.05, 0.13, 'bright', 'bolt', 0, 0, -HP); g.cyl(0.013, 0.022, 0.068, 0.05, 0.13, 'bright', 'bolt', 0, 0, -HP, 10);
     trigger(g, -0.01); g.box(0.03, 0.02, 0.09, 0, -0.012, -0.08, 'steel');
     g.set('muzzle', [0, 0.052, -0.745]).set('eject', [0.02, 0.07, 0.0]).set('sight', [0, 0.09, -0.14]).set('left', [-0.005, -0.012, -0.32])
-      .set('magPos', [0.0, 0.12, 0.0]).set('boltHand', [0.07, 0.05, 0.13]).set('adsDist', 0.32);
+      .set('magPos', [0.0, 0.12, 0.0]).set('boltHand', [0.07, 0.05, 0.13]).set('adsDist', 0.32).pivot('bolt', [0, 0.055, 0]);
   },
   pulse(g) {
     g.box(0.05, 0.085, 0.36, 0, 0.045, -0.1, 'white');                         // carcasa

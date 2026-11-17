@@ -11,7 +11,7 @@ import { setAnisotropy } from '../gfx/Textures.js';
 
 const FinalShader = {
   uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uDamage: { value: 0 }, uVig: { value: 0.55 }, uGrain: { value: 0.035 },
-    uDesat: { value: 0 }, uCA: { value: 0.006 }, uFlash: { value: 0 } },
+    uDesat: { value: 0 }, uCA: { value: 0.0022 }, uFlash: { value: 0 } },
   vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }',
   fragmentShader: `
     uniform sampler2D tDiffuse; uniform float uTime,uDamage,uVig,uGrain,uDesat,uCA,uFlash; varying vec2 vUv;
@@ -43,7 +43,7 @@ export class Engine {
     this.scene.add(this.camera);
     // Escena del arma en primera persona (FOV propio, profundidad independiente)
     this.vmScene = new THREE.Scene();
-    this.vmCamera = new THREE.PerspectiveCamera(54, 1, 0.01, 20);
+    this.vmCamera = new THREE.PerspectiveCamera(60, 1, 0.01, 20);
     this.vmScene.add(this.vmCamera);
     this.fx = FinalShader.uniforms;
     this.time = 0; this.fps = 60; this._acc = 0; this._frames = 0;
