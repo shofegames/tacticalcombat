@@ -6,6 +6,9 @@ import { MODES } from '../game/Modes.js';
 import { store, QUALITY, SKINS, WEAPON_FINISHES, KEY_LABELS } from '../core/Settings.js';
 import { keyName } from '../core/Input.js';
 import { audio } from '../core/Audio.js';
+import { version as PKG_VERSION } from '../../package.json';
+
+export const VERSION = 'v' + PKG_VERSION.replace(/\.0$/, '');
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const loadJSON = (k, d) => { try { return { ...d, ...JSON.parse(localStorage.getItem(k) || '{}') }; } catch { return d; } };
@@ -44,7 +47,7 @@ export class Menu {
       <header class="m-head">
         <div class="logo"><b>TACTICAL</b><span>COMBAT</span></div>
         <nav>${TABS.map(([id, l]) => `<button data-tab="${id}">${l}</button>`).join('')}</nav>
-        <div class="m-user"><span class="m-name"></span><small>v0.1</small></div>
+        <div class="m-user"><span class="m-name"></span><small>${VERSION}</small></div>
       </header>
       <main class="m-body"></main>
       <footer class="m-foot"><span>Ratón para apuntar · Clic izq. disparar · Clic der. apuntar · Esc pausa</span></footer>`;

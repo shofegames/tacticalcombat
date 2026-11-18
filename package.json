@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "server": "node server/index.js",
     "start": "node server/index.js",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "guardar-version": "node scripts/guardar-version.mjs"
   },
   "dependencies": {
     "three": "^0.172.0",
