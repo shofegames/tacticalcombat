@@ -31,12 +31,12 @@ execSync('npx vite build --logLevel warn', { cwd: root, stdio: 'inherit' });
 // Incrusta los recursos de dist/ dentro del HTML.
 const dist = join(root, 'dist');
 let html = readFileSync(join(dist, 'index.html'), 'utf8');
-html = html.replace(/<link rel="stylesheet"[^>]*href="\/?([^"]+\.css)"[^>]*>/g, (_, f) => `<style>\n${readFileSync(join(dist, f), 'utf8')}\n</style>`);
-html = html.replace(/<script type="module"[^>]*src="\/?([^"]+\.js)"[^>]*><\/script>/g, (_, f) => {
+html = html.replace(/<link rel="stylesheet"[^>]*href="(?:\.?\/)?([^"]+\.css)"[^>]*>/g, (_, f) => `<style>\n${readFileSync(join(dist, f), 'utf8')}\n</style>`);
+html = html.replace(/<script type="module"[^>]*src="(?:\.?\/)?([^"]+\.js)"[^>]*><\/script>/g, (_, f) => {
   const js = readFileSync(join(dist, f), 'utf8').replace(/<\/script/gi, '<\\/script');
   return `<script type="module">\n${js}\n</script>`;
 });
-if (/src="\/?assets\//.test(html) || /href="\/?assets\//.test(html)) throw new Error('Quedaron recursos sin incrustar en el HTML.');
+if (/(src|href)="(\.?\/)?assets\//.test(html)) throw new Error('Quedaron recursos sin incrustar en el HTML.');
 
 mkdirSync(outDir, { recursive: true });
 const file = join(outDir, `TACTICAL COMBAT v${version}.html`);
