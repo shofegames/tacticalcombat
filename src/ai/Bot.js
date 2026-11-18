@@ -70,7 +70,8 @@ export class Bot extends Combatant {
 
   // ------------------------------------------------------------------ percepción
   canSee(t) {
-    const b = this.body, tb = t.body, w = this.game.world, ey = this.eyeY;
+    if (this.blindT > 0) return false;
+    const b = this.body, tb = t.body, w = this.game.world, ey = this.eyeY, eq = this.game.equipment;
     const dx = tb.x - b.x, dz = tb.z - b.z, d = Math.hypot(dx, dz);
     if (d > this.diff.range) return false;
     if (d > 5) { // cono de visión (de cerca se «siente» al enemigo)
@@ -78,7 +79,17 @@ export class Bot extends Combatant {
       if (a > (this.diff.fov * Math.PI / 180) / 2) return false;
     }
     const th = t.crouch ? BODY.crouchH : BODY.standH;
-    return w.los(b.x, ey, b.z, tb.x, tb.y + th - 0.2, tb.z, F_SIGHT) || w.los(b.x, ey, b.z, tb.x, tb.y + th * 0.55, tb.z, F_SIGHT);
+    const see = (x, y, z) => w.los(b.x, ey, b.z, x, y, z, F_SIGHT) && !(eq && eq.smokeBlocks(b.x, ey, b.z, x, y, z));
+    if (see(tb.x, tb.y + th - 0.2, tb.z) || see(tb.x, tb.y + th * 0.55, tb.z)) return true;
+    // cabeza asomada por una esquina
+    return (Math.abs(t.leanOX) + Math.abs(t.leanOZ) > 0.12) && see(tb.x + t.leanOX, tb.y + th - 0.2, tb.z + t.leanOZ);
+  }
+  /** Cegado por una granada aturdidora. */
+  blind(t) {
+    if (!this.alive || t < 0.2) return;
+    this.blindT = Math.max(this.blindT || 0, t);
+    this.alertT = Math.max(this.alertT, t + 3);
+    for (const m of this.memory.values()) m.vis = 0;
   }
   perceive(dt, now) {
     const squad = this.game.squads[this.team];
@@ -186,11 +197,28 @@ export class Bot extends Combatant {
     if (t) {
       const m = this.memory.get(t.id);
       const lowHp = hp < 0.38 && now - this.lastHurt < 4;
-      if (lowHp && this.state !== 'retreat') { if (this.findCover(m, 20)) { this.state = 'retreat'; this.coverT = R(3.5, 5.5); return; } }
+      if (lowHp && this.state !== 'retreat') {
+        if (this.findCover(m, 20)) {
+          this.state = 'retreat'; this.coverT = R(3.5, 5.5);
+          // cortina de humo para cubrir la retirada
+          if (this.gear?.tactical > 0 && Math.random() < 0.55 && Math.hypot(m.x - this.body.x, m.z - this.body.z) > 6) {
+            const d = Math.hypot(m.x - this.body.x, m.z - this.body.z), k = Math.min(4, d * 0.4) / d;
+            if (this.game.equipment.botThrow(this, 'smoke', { x: this.body.x + (m.x - this.body.x) * k, y: this.body.y, z: this.body.z + (m.z - this.body.z) * k })) this.gear.tactical--;
+          }
+          return;
+        }
+      }
       if (this.state === 'retreat') { if (hp > 0.7 || this.coverT <= 0) this.state = 'combat'; else return; }
       if (!this.targetVisible && now - m.t > 1.2) {
         // objetivo perdido: ir a su última posición conocida (flanqueando si la dificultad lo permite)
-        if (this.state !== 'search') { this.state = 'search'; this.goTo(m.x, m.y, m.z, Math.random() < this.diff.flank ? m : null); squad?.release(this); this.coverNode = null; }
+        if (this.state !== 'search') {
+          this.state = 'search'; this.goTo(m.x, m.y, m.z, Math.random() < this.diff.flank ? m : null); squad?.release(this); this.coverNode = null;
+          // granada a la última posición conocida (enemigo a cubierto)
+          const d = Math.hypot(m.x - this.body.x, m.z - this.body.z);
+          if (this.gear?.lethal > 0 && d > 8 && d < 26 && now - m.t < 3 && now - (this._grenT ?? -99) > 15 && Math.random() < 0.25 + this.diff.flank * 0.35) {
+            if (this.game.equipment.botThrow(this, 'frag', m)) { this.gear.lethal--; this._grenT = now; }
+          }
+        }
         return;
       }
       if (this.state === 'cover') return;
@@ -283,6 +311,7 @@ export class Bot extends Combatant {
     if (!this.alive) { if (this.model) this.model.update(dt, this._pose()); return; }
     this.spawnProtect = Math.max(0, this.spawnProtect - dt);
     this.cool -= dt; this.restT -= dt; this.goalT -= dt; this.coverT -= dt; this.alertT -= dt; this.repathT -= dt;
+    this.blindT = Math.max(0, (this.blindT || 0) - dt); this._meleeCd = (this._meleeCd || 0) - dt;
     if (this.reloadT > 0) { this.reloadT -= dt; if (this.reloadT <= 0) { this.mag = this.def.mag; audio.mech('magIn', this._pos()); } }
     this.percT -= dt;
     if (this.percT <= 0) { this.perceive(0.15, now); this.percT = 0.15; }
@@ -309,6 +338,11 @@ export class Bot extends Combatant {
         this.wishX = (fx * adv + -fz * this.strafe * 0.8) * WALK; this.wishZ = (fz * adv + fx * this.strafe * 0.8) * WALK;
         this.wantCrouch = this.strafe === 0 && d > 14;
         speed = WALK;
+        // cuerpo a cuerpo si el enemigo está encima
+        if (this.targetVisible && d < 1.8 && this._meleeCd <= 0 && !this.passive) {
+          this._meleeCd = R(1.1, 1.6);
+          if (Math.random() < 0.35 + this.diff.flank * 0.5 && g.equipment.botMelee(this, t)) break;
+        }
         if (this.targetVisible && off < 0.12 + 3 / Math.max(4, d)) this.tryFire(dt, t);
         else if (this.mag <= 0) this.tryFire(dt, t);
         break;
@@ -373,6 +407,22 @@ export class Bot extends Combatant {
     }
     // recargar con calma fuera de combate
     if (!t && this.mag < this.def.mag * 0.6 && this.reloadT <= 0 && !this.passive) { this.mag = 0; this.tryFire(dt, null); }
+    // cegado: se tambalea, se cubre la cara y no dispara
+    if (this.blindT > 0) {
+      this.firing = false; this.wantCrouch = true;
+      this._blindYaw = (this._blindYaw ?? this.yaw) + R(-1, 1) * dt * 3;
+      this.aim(dt, b.x - Math.sin(this._blindYaw) * 10, this.eyeY - 2, b.z - Math.cos(this._blindYaw) * 10, false);
+      this.wishX = Math.sin(now * 1.7 + this.id) * 1.2; this.wishZ = Math.cos(now * 1.3 + this.id) * 1.2;
+    } else this._blindYaw = null;
+    // granada cerca: huir (prioridad máxima)
+    if (!this.passive && g.equipment) {
+      const gr = g.equipment.dangerNear(b.x, b.y, b.z, 6.5);
+      if (gr && (gr.owner === this || g.hostile(gr.owner, this) || gr.owner.team === this.team)) {
+        const dx = b.x - gr.p.x, dz = b.z - gr.p.z, d = Math.hypot(dx, dz) || 1;
+        this.wishX = (dx / d) * RUN; this.wishZ = (dz / d) * RUN; this.wantCrouch = false;
+        if (this.path) { this.path = null; this.thinkT = 0.4; }
+      }
+    }
 
     // ---- agacharse ----
     if (this.wantCrouch) this.crouch = true;

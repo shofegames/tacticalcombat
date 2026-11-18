@@ -12,7 +12,7 @@ const FRAG = `
 uniform sampler2D uMap; varying vec4 vColor;
 void main(){ vec4 t=texture2D(uMap,gl_PointCoord); gl_FragColor=vec4(vColor.rgb*t.rgb, vColor.a*t.a); if(gl_FragColor.a<0.004) discard; }`;
 
-class Particles {
+export class Particles {
   constructor(n, tex, additive) {
     this.n = n; this.cur = 0;
     this.pos = new Float32Array(n * 3); this.col = new Float32Array(n * 4); this.size = new Float32Array(n);

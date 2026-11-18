@@ -3,7 +3,10 @@
 // y pantalla de resultados. Todo en DOM sobre el canvas; las escrituras se cachean por frame.
 import { F_MOVE } from '../../shared/collision.js';
 import { MODES, TEAM_NAMES } from '../game/Modes.js';
-import { store, keyLabel } from '../core/Settings.js';
+import { store, keyLabel, SKINS, WEAPON_FINISHES } from '../core/Settings.js';
+import { GEAR } from '../../shared/gear.js';
+import { WEAPONS } from '../../shared/weapons.js';
+import { levelInfo } from '../../shared/progression.js';
 
 const DEG = Math.PI / 180;
 const FIRE_MODE = { auto: 'AUTO', semi: 'SEMI', bolt: 'CERROJO', pump: 'CORREDERA', burst: 'RÁFAGA' };
@@ -61,6 +64,10 @@ export class Hud {
     this.resEl = h('span', 'reserve', row);
     this.wMode = h('div', 'w-mode', this.ammoEl);
     this.slotsEl = h('div', 'slots', this.ammoEl);
+    this.gearEl = h('div', 'gear-row', this.ammoEl);
+    this.flashEl = h('div', 'flash-white', root);
+    this.nadeWarn = h('div', 'nade-warn', root);
+    this._nades = [];
     this.hint = h('div', 'hint', root);
     // centro: avisos, banner de baja, entrenamiento
     this.toastEl = h('div', 'toast', root);
@@ -86,6 +93,7 @@ export class Hud {
     this.resultsEl.classList.add('hidden'); this.deathEl.classList.add('hidden'); this.board.classList.add('hidden');
     game._statsAtStart = { shots: store.stats.shots, hits: store.stats.hits };
     this._boardOn = false;
+    this.flashEl.style.opacity = 0; this.nadeWarn.innerHTML = ''; this._nades = [];
     this._c = {}; this._toastT = 0; this._bannerT = 0; this._hitT = 0; this._sup = 0; this._trainT = 0; this._lag = 100; this._boardT = 0;
     this.zonesEl.innerHTML = ''; this._zoneEls = null;
     this._buildRadarImage();
@@ -122,6 +130,8 @@ export class Hud {
     this.trainEl.classList.add('show'); this._trainT = 2.5;
   }
   suppress() { this._sup = Math.min(1, this._sup + 0.35); }
+  /** Pantalla blanca de la granada aturdidora (0‒1). */
+  setFlash(v) { const o = v.toFixed(2); if (this._c.flash !== o) { this._c.flash = o; this.flashEl.style.opacity = o; } }
   hurt(attacker, amount) {
     this._hurtPulse = Math.min(1, (this._hurtPulse || 0) + amount / 60);
     if (!attacker || attacker === this.game.player) return;
@@ -219,12 +229,24 @@ export class Hud {
         <div><b>${p.assists}</b><span>Asistencias</span></div><div><b>${p.score}</b><span>Puntos</span></div>
         <div><b>${acc}</b><span>Precisión</span></div><div><b>${place}º</b><span>Posición</span></div>
       </div>
+      ${r.xp ? this._xpHTML(r.xp) : ''}
       ${this._boardHTML()}
       <div class="r-btns"><button class="btn primary" data-a="rematch">REVANCHA</button><button class="btn" data-a="exit">MENÚ PRINCIPAL</button></div>
     </div>`;
     this.resultsEl.querySelector('[data-a=rematch]').onclick = () => this.onRematch?.();
     this.resultsEl.querySelector('[data-a=exit]').onclick = () => this.onExit?.();
     this.resultsEl.classList.remove('hidden');
+  }
+  _xpHTML(x) {
+    const a = levelInfo(x.before), b = levelInfo(x.after), up = x.levelAfter > x.levelBefore;
+    const name = (u) => u.kind === 'weapon' ? WEAPONS[u.id].name : u.kind === 'skin' ? `Camuflaje ${SKINS[u.id].name}` : u.kind === 'finish' ? `Acabado ${WEAPON_FINISHES[u.id].name}` : GEAR[u.id].name;
+    const startPct = up ? 0 : a.frac * 100, endPct = b.frac * 100;
+    return `<div class="r-xp">
+      <div class="xp-head"><span class="lvl">NIVEL ${x.levelAfter}</span>${up ? '<span class="lvl-up">¡SUBISTE DE NIVEL!</span>' : ''}<b>+${x.total} EXP</b></div>
+      <div class="xp-bar"><i class="old" style="width:${startPct}%"></i><i class="new" style="--from:${startPct}%;--to:${endPct}%"></i></div>
+      <div class="xp-parts">${x.parts.map(([n, v]) => `<span>${n} <b>+${v}</b></span>`).join('')}<span class="next">${b.max ? 'Nivel máximo' : `${b.need - b.cur} EXP para el nivel ${x.levelAfter + 1}`}</span></div>
+      ${x.unlocks.length ? `<div class="xp-unlocks"><small>DESBLOQUEADO</small>${x.unlocks.map((u) => `<span>${esc(name(u))}</span>`).join('')}</div>` : ''}
+    </div>`;
   }
   _matchAcc() {
     const g = this.game, st = store.stats, s0 = g._statsAtStart;
@@ -338,6 +360,16 @@ export class Hud {
       else if (ws.state === 'reload' || ws.state.startsWith('shell')) hint = 'RECARGANDO…';
     }
     this._set('hint', this.hint, 'textContent', hint);
+    // granadas
+    const gr = p.gear;
+    if (gr) {
+      const inf = gr.infinite, tac = GEAR[gr.tacType];
+      const html = `<span class="${gr.lethal || inf ? '' : 'empty'}"><b>${keyLabel('lethal')}</b><i class="ico frag"></i>${inf ? '∞' : gr.lethal}</span>`
+        + `<span class="${gr.tactical || inf ? '' : 'empty'}"><b>${keyLabel('tactical')}</b><i class="ico ${gr.tacType}"></i>${inf ? '∞' : gr.tactical}<small>${tac.short}</small></span>`
+        + `<span><b>${keyLabel('melee')}</b><i class="ico knife"></i></span>`;
+      this._set('gear', this.gearEl, 'innerHTML', html);
+    }
+    this._updateNades(p);
 
     // --- marcador del modo ---
     const info = m.hudInfo();
@@ -398,6 +430,22 @@ export class Hud {
     this._radarT = (this._radarT || 0) - dt;
     if (this._radarT <= 0) { this._radarT = 1 / 30; this._drawRadar(); }
     this._set('fps', this.fpsEl, 'textContent', store.settings.showFps ? `${g.engine.fps} FPS` : '');
+  }
+
+  /** Aviso de granadas de fragmentación cercanas: icono en el borde de la retícula apuntando hacia ellas. */
+  _updateNades(p) {
+    const list = p.alive ? this.game.equipment.projectiles.filter((pr) => pr.type === 'frag' && Math.hypot(pr.p.x - p.body.x, pr.p.z - p.body.z) < 9 && Math.abs(pr.p.y - p.body.y) < 4) : [];
+    while (this._nades.length < list.length) { const e = h('div', 'nade', this.nadeWarn); h('i', '', e); this._nades.push(e); }
+    const sin = Math.sin(p.yaw), cos = Math.cos(p.yaw);
+    this._nades.forEach((e, i) => {
+      const pr = list[i];
+      if (!pr) { e.style.display = 'none'; return; }
+      e.style.display = '';
+      const dx = pr.p.x - p.body.x, dz = pr.p.z - p.body.z, d = Math.hypot(dx, dz);
+      const f = -dx * sin - dz * cos, r = dx * cos - dz * sin, a = Math.atan2(r, f);
+      e.style.transform = `rotate(${a}rad) translateY(-${110 + d * 6}px) rotate(${-a}rad)`;
+      e.classList.toggle('close', d < 4.5);
+    });
   }
 
   _updateZones(info) {

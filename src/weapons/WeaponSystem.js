@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { WEAPONS } from '../../shared/weapons.js';
 import { audio } from '../core/Audio.js';
+import { store } from '../core/Settings.js';
 
 const RELOAD_SOUNDS = {
   mag: [[0.15, 'magOut'], [0.62, 'magIn']],
@@ -33,6 +34,15 @@ export class WeaponSystem {
     this.cur = i; this._equip();
   }
   refill() { for (const s of this.slots) { s.mag = s.def.mag; s.reserve = s.def.reserve; } }
+  /** ¿Se puede lanzar una granada o usar el cuchillo ahora? (interrumpe recargas y cerrojos) */
+  canGear() { return !['holster', 'gear', 'equip'].includes(this.state); }
+  /** Baja el arma durante una acción de equipo; onAct se ejecuta en la fracción actAt de la duración. */
+  startGear(dur, actAt, onAct) {
+    if (this.state === 'cycle') this.needCycle = true;
+    this._committed = false; this._charged = false; this._interrupt = false;
+    this.state = 'gear'; this.t = 0; this.dur = dur; this._gearAt = actAt; this._gearCb = onAct;
+    this.adsToggle = false;
+  }
   get slot() { return this.slots[this.cur]; }
   get def() { return this.slot.def; }
 
@@ -45,7 +55,7 @@ export class WeaponSystem {
     this.game.onWeaponChanged?.(d);
   }
   switchTo(i) {
-    if (i === this.cur || i < 0 || i >= this.slots.length || this.state === 'holster') return;
+    if (i === this.cur || i < 0 || i >= this.slots.length || this.state === 'holster' || this.state === 'gear') return;
     this.pending = i; this.state = 'holster'; this.t = 0; this.dur = 0.2;
   }
   startReload() {
@@ -79,7 +89,12 @@ export class WeaponSystem {
     // apuntado (ADS)
     const sprinting = p.sprinting;
     if (sprinting) this.sprintOut = 0.16; else this.sprintOut = Math.max(0, this.sprintOut - dt);
-    const wantAds = canAct && input.mouse.right && !sprinting && (this.state === 'ready' || this.state === 'cycle');
+    if (store.settings.adsMode === 'toggle') {
+      if (canAct && input.mouse.rightPressed) this.adsToggle = !this.adsToggle;
+      if (!canAct || sprinting) this.adsToggle = false;
+    }
+    const adsInput = store.settings.adsMode === 'toggle' ? this.adsToggle : input.mouse.right;
+    const wantAds = canAct && adsInput && !sprinting && (this.state === 'ready' || this.state === 'cycle');
     const prev = this.ads;
     this.ads = Math.max(0, Math.min(1, this.ads + (wantAds ? dt : -dt) / d.adsTime));
     if (prev === 0 && this.ads > 0) audio.mech('ads');
@@ -90,6 +105,10 @@ export class WeaponSystem {
     const u = Math.min(1, this.t / this.dur);
     switch (this.state) {
       case 'equip': if (u >= 1) this.state = 'ready'; break;
+      case 'gear':
+        if (this._gearCb && u >= this._gearAt) { const f = this._gearCb; this._gearCb = null; f(); }
+        if (u >= 1) { this.state = 'equip'; this.t = 0; this.dur = 0.3; if (this.needCycle && s.mag > 0) this._startCycle(); }
+        break;
       case 'holster': if (u >= 1) { this.cur = this.pending; this.pending = -1; this._equip(); } break;
       case 'reload': {
         const evs = RELOAD_SOUNDS[d.reloadType] || RELOAD_SOUNDS.mag;
@@ -136,6 +155,7 @@ export class WeaponSystem {
     }
     const a = this.anim;
     a.kind = this.state === 'ready' ? 'idle' : this.state; a.u = Math.min(1, this.t / this.dur); a.empty = this.emptyStart; a.reloadType = d.reloadType;
+    if (this.state === 'gear') { a.kind = 'holster'; a.u = Math.min(1, this.t / 0.14); }
   }
 
   _startCycle() { this.state = 'cycle'; this.t = 0; this.dur = this.def.mode === 'pump' ? 0.5 : 0.78; this._ev = 0; }

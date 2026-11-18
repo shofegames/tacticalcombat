@@ -18,6 +18,9 @@ import { audio } from '../core/Audio.js';
 import { store, SKINS } from '../core/Settings.js';
 import { disposeMaterials } from '../gfx/Materials.js';
 import { disposeTextures } from '../gfx/Textures.js';
+import { Equipment } from '../weapons/Equipment.js';
+import { DEFAULT_LOADOUT } from '../../shared/weapons.js';
+import { levelFromXp, isUnlocked, matchXp, unlocksBetween } from '../../shared/progression.js';
 
 const _o = new THREE.Vector3(), _d = new THREE.Vector3(), _e = new THREE.Vector3(), _hit = {}, _wh = {};
 
@@ -46,13 +49,17 @@ export class Game {
     this.effects = new Effects(this.engine, this.world, d);
     this.effects.setEmitters(this.mapRenderer.emitters);
     this.effects.onShellLand = (p) => { if (this.distToPlayer(p) < 6) audio.mech('shellLand', p); };
+    this.equipment = new Equipment(this);
     onProgress(0.93, 'Desplegando unidades');
     this.mode = createMode(o.mode, this, o);
     // Jugador
     const pl = (this.player = new Player(this, store.settings.name || 'Jugador', this.mode.playerTeam()));
     this.vm = new ViewModel(this.engine);
     this.weapons = new WeaponSystem(this, pl, this.vm);
-    this.weapons.setLoadout(store.loadout.primary, store.loadout.secondary);
+    // armas bloqueadas por nivel: se usa el equipo por defecto (el campo de tiro permite todo)
+    const lvl = levelFromXp(store.progress.xp), free = o.mode === 'training', lo = store.loadout;
+    this.weapons.setLoadout(free || isUnlocked('weapon', lo.primary, lvl) ? lo.primary : DEFAULT_LOADOUT.primary,
+      free || isUnlocked('weapon', lo.secondary, lvl) ? lo.secondary : DEFAULT_LOADOUT.secondary);
     this.weapons.infinite = o.mode === 'training';
     this.combatants.push(pl);
     // Bots
@@ -62,6 +69,8 @@ export class Game {
     for (const c of this.combatants) this.spawn(c, true);
     this.hud.attach(this);
     audio.startAmbience(d.env.ambience, d.env.reverb);
+    audio.startCombatMusic(d.era);
+    this._music = 0;
     onProgress(1, 'Listo');
   }
 
@@ -85,6 +94,7 @@ export class Game {
     const s = c.home && initial !== null ? c.home : this.mode.pickSpawn(c, initial);
     c.spawnAt({ x: s.x, y: s.y, z: s.z, yaw: s.yaw ?? this._facing(s) });
     c._dmgBy = new Map();
+    this.equipment.resupply(c);
     if (c === this.player) {
       this.vm.visible = true; this.weapons.refill(); this.weapons.cur = 0; this.weapons._equip();
       this.hud.onSpawn();
@@ -108,7 +118,12 @@ export class Game {
       const px = c.body.x - ox, py = c.body.y + 0.9 - oy, pz = c.body.z - oz, along = px * dir.x + py * dir.y + pz * dir.z;
       if (along < 0 || along > tMax + 1) continue;
       if (px * px + py * py + pz * pz - along * along > 2.5) continue;
-      const r = rayVsCharacter(ox, oy, oz, dir.x, dir.y, dir.z, c.body.x, c.body.y, c.body.z, c.crouch, tMax, _hit);
+      let r = rayVsCharacter(ox, oy, oz, dir.x, dir.y, dir.z, c.body.x, c.body.y, c.body.z, c.crouch, tMax, _hit);
+      // cabeza y hombros asomados por una esquina
+      if (!r && Math.abs(c.leanOX) + Math.abs(c.leanOZ) > 0.12) {
+        r = rayVsCharacter(ox, oy, oz, dir.x, dir.y, dir.z, c.body.x + c.leanOX, c.body.y, c.body.z + c.leanOZ, c.crouch, tMax, _hit);
+        if (r && r.zone === 'legs') r = null;
+      }
       if (r) { tMax = r.t; hitC = c; zone = r.zone; }
     }
     if (src === this.player) for (const t of this.targets) {
@@ -281,6 +296,7 @@ export class Game {
     const canAct = inp.active && !this.over;
     p.update(dt, inp, canAct && (live || this.mode.state === 'pre'));
     if (this.mode.state === 'pre') { p.vx = p.vz = 0; }
+    this.equipment.playerInput(dt, inp, canAct && live);
     if (p.alive) this.weapons.update(dt, inp, canAct && live);
     if (canAct && this.opts.mode === 'training' && inp.hit('interact')) this.cycleArmory(1);
     if (canAct && inp.keys.has(store.settings.keys.scoreboard)) this.hud.showScoreboard(true); else this.hud.showScoreboard(false);
@@ -295,7 +311,9 @@ export class Game {
       if (c.respawnT <= 0 && live) this.spawn(c);
     }
     if (this.targets.length) this._updateTargets(dt);
+    this.equipment.update(dt);
     this.mode.update(dt);
+    this._updateMusic(dt);
     // cámara, arma y entorno
     const cam = this.engine.camera;
     p.applyCamera(cam, this.time);
@@ -314,7 +332,23 @@ export class Game {
     inp.endFrame();
   }
 
-  /** Fin de partida: estadísticas y pantalla de resultados. */
+  /** Intensidad de la música: sube con el combate cercano y baja con la calma. */
+  _updateMusic(dt) {
+    const p = this.player, t = this.time;
+    let want = 0.15;
+    if (this.mode.state === 'live') {
+      want = 0.3;
+      if (t - p.lastHurt < 6 || t - p.lastShotT < 4) want = 1;
+      else if (this.bots.some((b) => b.alive && b.target === p)) want = 0.7;
+      if (!p.alive) want = 0.2;
+      const info = this.mode.timeLimit > 0 ? this.mode.timeLeft : 999;
+      if (info < 60) want = Math.max(want, 0.8);
+    }
+    this._music += (want - this._music) * Math.min(1, dt * (want > this._music ? 1.5 : 0.25));
+    audio.setCombatIntensity(this._music);
+  }
+
+  /** Fin de partida: estadísticas, experiencia y pantalla de resultados. */
   finish(result) {
     if (this.over) return;
     this.over = true;
@@ -326,7 +360,15 @@ export class Game {
       if (won) st.wins++; else st.losses++;
       result.won = won;
       audio.uiSound(won ? 'win' : 'lose');
+      // experiencia y desbloqueos
+      const before = store.progress.xp, lvA = levelFromXp(before);
+      const xp = matchXp({ score: this.player.score, won, draw: !this.mode.ffa && !result.winner, mode: this.opts.mode, minutes: this.time / 60 });
+      store.progress.xp = before + xp.total;
+      const lvB = levelFromXp(store.progress.xp);
+      result.xp = { ...xp, before, after: store.progress.xp, levelBefore: lvA, levelAfter: lvB, unlocks: unlocksBetween(lvA, lvB) };
+      store.saveProgress();
     }
+    audio.stopCombatMusic();
     store.saveStats();
     this.input.unlock();
     this.hud.results(result);
@@ -334,6 +376,8 @@ export class Game {
 
   dispose() {
     audio.stopAmbience();
+    audio.stopCombatMusic();
+    this.equipment.dispose();
     this.hud.detach();
     for (const b of this.bots) b.model?.dispose();
     for (const t of this.targets) { this.engine.scene.remove(t.root); t.root.traverse((o) => o.geometry?.dispose()); }

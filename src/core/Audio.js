@@ -149,6 +149,7 @@ class AudioEngine {
       case 'belt': this._noise(out, t, 0.25, 0.2, 'bandpass', 3200, 3); click(0.1, 1700, 0.3); click(0.22, 2100, 0.3); break;
       case 'cover': click(0, 700, 0.5, 0.06); this._tone(out, t, 0.08, 0.2, 'sine', 180, 80); break;
       case 'dry': click(0, 2400, 0.35, 0.02); break;
+      case 'pin': click(0, 2600, 0.3, 0.02); this._tone(out, t + 0.02, 0.12, 0.06, 'sine', 3400, 2600); click(0.12, 1500, 0.35, 0.03); break;
       case 'equip': this._noise(out, t, 0.16, 0.16, 'bandpass', 1300, 0.8, this.white, 500, 0.04); click(0.12, 1600, 0.2); break;
       case 'ads': this._noise(out, t, 0.08, 0.05, 'bandpass', 900, 0.8, this.white, 0, 0.02); break;
       case 'shellLand': this._tone(out, t, 0.05, 0.1, 'sine', R(3800, 5200)); this._tone(out, t + 0.07, 0.04, 0.05, 'sine', R(4200, 5600)); break;
@@ -200,6 +201,129 @@ class AudioEngine {
       case 'spawn': this._tone(o, t, 0.25, 0.1, 'sine', 300, 900); break;
       default: break;
     }
+  }
+
+  // ---------------- Equipo: granadas, cuchillo, deslizamiento ----------------
+  explosion(pos, dist = 0) {
+    if (!this.ready) return;
+    const t = this.ctx.currentTime, out = this._out(pos, 8, this.sfx, 0.5), k = dist < 6 ? 1.3 : 1;
+    this._noise(out, t, 0.08, 1.2 * k, 'highpass', 900, 0.6);                                  // estallido
+    this._tone(out, t, 0.9, 1.1 * k, 'sine', 90, 24);                                           // golpe grave
+    this._noise(out, t, 1.6, 0.9 * k, 'lowpass', 1600, 0.7, this.brown, 90, 0.004);             // cuerpo
+    this._noise(out, t + 0.05, 2.4, 0.35, 'lowpass', 500, 0.6, this.brown, 60, 0.05);           // cola
+    for (let i = 0; i < 6; i++) this._noise(out, t + 0.12 + Math.random() * 0.6, 0.05, 0.12, 'bandpass', R(2000, 4500), 3);   // escombros
+  }
+  flashbang(pos, dist = 0) {
+    if (!this.ready) return;
+    const t = this.ctx.currentTime, out = this._out(pos, 8, this.sfx, 0.45);
+    this._noise(out, t, 0.12, 1.4, 'highpass', 1200, 0.5);
+    this._tone(out, t, 0.5, 0.8, 'sine', 140, 40);
+    this._noise(out, t, 0.9, 0.5, 'lowpass', 3000, 0.6, this.white, 300);
+    void dist;
+  }
+  /** Zumbido de oídos tras un destello cercano; amortigua el resto del sonido. */
+  tinnitus(k, dur) {
+    if (!this.ready) return;
+    const c = this.ctx, t = c.currentTime;
+    this._tone(this.ui, t, dur + 0.5, 0.09 * k, 'sine', 3300, 3100, 0.05);
+    this.sfx.gain.cancelScheduledValues(t);
+    this.sfx.gain.setTargetAtTime(store.settings.sfx * (1 - 0.8 * k), t, 0.02);
+    this.sfx.gain.setTargetAtTime(store.settings.sfx, t + dur * 0.7, dur * 0.25);
+  }
+  knife(pos = null) {
+    if (!this.ready) return;
+    const t = this.ctx.currentTime, out = this._out(pos, 2, this.sfx, 0.05);
+    this._noise(out, t, 0.22, 0.4, 'bandpass', 2200, 1.4, this.white, 5200, 0.06);
+  }
+  throwWhoosh(pos = null) {
+    if (!this.ready) return;
+    const t = this.ctx.currentTime, out = this._out(pos, 2, this.sfx, 0.05);
+    this._noise(out, t, 0.28, 0.25, 'bandpass', 700, 1.2, this.white, 1600, 0.08);
+  }
+  grenadeBounce(pos, k = 1) {
+    if (!this.ready) return;
+    const t = this.ctx.currentTime, out = this._out(pos, 2, this.sfx, 0.1);
+    this._tone(out, t, 0.05, 0.25 * k, 'triangle', R(900, 1300), 500); this._noise(out, t, 0.04, 0.2 * k, 'bandpass', 2500, 2);
+  }
+  smokePop(pos) {
+    if (!this.ready) return;
+    const t = this.ctx.currentTime, out = this._out(pos, 4, this.sfx, 0.2);
+    this._noise(out, t, 0.08, 0.5, 'lowpass', 900); this._noise(out, t + 0.05, 2.6, 0.32, 'bandpass', 1800, 0.7, this.white, 900, 0.15);
+  }
+  slide(surf = 'concrete') {
+    if (!this.ready) return;
+    const t = this.ctx.currentTime, out = this._out(null, 1, this.sfx, 0.05);
+    this._noise(out, t, 0.6, surf === 'dirt' ? 0.22 : 0.16, 'bandpass', surf === 'dirt' ? 700 : 1300, 0.8, this.white, 400, 0.04);
+  }
+
+  // ---------------- Música de combate (generativa, por época, con intensidad) ----------------
+  startCombatMusic(era = 'modern') {
+    if (!this.ready) return;
+    this.stopCombatMusic(true);
+    const c = this.ctx, styles = {
+      modern: { bpm: 104, root: 38, scale: [0, 2, 3, 5, 7, 8, 10], prog: [0, 5, 3, 6], wave: 'sawtooth' },
+      historic: { bpm: 92, root: 36, scale: [0, 2, 3, 5, 7, 8, 11], prog: [0, 3, 4, 0], wave: 'triangle' },
+      future: { bpm: 118, root: 40, scale: [0, 1, 3, 5, 7, 8, 10], prog: [0, 1, 5, 3], wave: 'square' },
+    }, st = styles[era] || styles.modern, beat = 60 / st.bpm;
+    const mk = (g) => { const n = c.createGain(); n.gain.value = g; n.connect(this.music); return n; };
+    const m = this._cm = { on: true, base: mk(0), perc: mk(0), drive: mk(0), k: 0, timer: 0 };
+    const wet = c.createGain(); wet.gain.value = 0.35; m.base.connect(wet); wet.connect(this.reverb); m.wet = wet;
+    const hz = (n) => 440 * Math.pow(2, (n - 69) / 12), deg = (d, o = 0) => st.root + st.scale[((d % 7) + 7) % 7] + 12 * (Math.floor(d / 7) + o);
+    let next = c.currentTime + 0.2, bar = 0;
+    const pad = (t, d, len) => {
+      for (const [dd, o] of [[d, 1], [d + 2, 1], [d + 4, 1]]) {
+        const osc = c.createOscillator(), f = c.createBiquadFilter(), g = c.createGain();
+        osc.type = 'sawtooth'; osc.frequency.value = hz(deg(dd, o)); osc.detune.value = R(-7, 7);
+        f.type = 'lowpass'; f.frequency.value = 520;
+        g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.03, t + len * 0.35); g.gain.linearRampToValueAtTime(0.0001, t + len);
+        osc.connect(f); f.connect(g); g.connect(m.base); osc.start(t); osc.stop(t + len + 0.05);
+      }
+      this._tone(m.base, t, len, 0.16, 'sine', hz(deg(d, -1)));
+    };
+    const kick = (t, g) => { this._tone(m.perc, t, 0.35, g, 'sine', 110, 40); };
+    const snare = (t, g) => { this._noise(m.perc, t, 0.16, g, 'bandpass', 1800, 0.8); this._tone(m.perc, t, 0.08, g * 0.5, 'triangle', 220, 160); };
+    const hat = (t, g) => this._noise(m.perc, t, 0.03, g, 'highpass', 7000);
+    const tom = (t, g, f) => this._tone(m.perc, t, 0.3, g, 'sine', f, f * 0.55);
+    const sched = () => {
+      if (!m.on) return;
+      while (next < c.currentTime + 1.2) {
+        const d = st.prog[bar % st.prog.length], len = beat * 4;
+        pad(next, d, len * 1.05);
+        // percusión: marcial en la época histórica, más electrónica en la futurista
+        for (let i = 0; i < 4; i++) kick(next + i * beat, i % 2 ? 0.25 : 0.5);
+        if (era === 'historic') { for (let i = 0; i < 8; i++) snare(next + i * beat * 0.5, i % 4 === 2 ? 0.22 : 0.07); }
+        else { snare(next + beat, 0.24); snare(next + beat * 3, 0.24); for (let i = 0; i < 8; i++) hat(next + i * beat * 0.5, i % 2 ? 0.02 : 0.035); }
+        if (bar % 4 === 3) for (let i = 0; i < 4; i++) tom(next + beat * (3 + i * 0.25), 0.3, 160 - i * 25);
+        // ostinato de tensión (solo con intensidad alta)
+        const pat = [0, 0, 7, 0, 3, 0, 7, 5];
+        for (let i = 0; i < 8; i++) {
+          const n = deg(d + (pat[i] === 7 ? 4 : pat[i] === 3 ? 2 : pat[i] === 5 ? 3 : 0), 0);
+          const o = c.createOscillator(), f = c.createBiquadFilter(), g = c.createGain(), tt = next + i * beat * 0.5;
+          o.type = st.wave; o.frequency.value = hz(n); f.type = 'lowpass'; f.frequency.setValueAtTime(1800, tt); f.frequency.exponentialRampToValueAtTime(300, tt + beat * 0.45);
+          g.gain.setValueAtTime(0.0001, tt); g.gain.linearRampToValueAtTime(0.05, tt + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, tt + beat * 0.45);
+          o.connect(f); f.connect(g); g.connect(m.drive); o.start(tt); o.stop(tt + beat * 0.5);
+        }
+        next += len; bar++;
+      }
+      m.timer = setTimeout(sched, 300);
+    };
+    sched();
+  }
+  /** k: 0 calma · 1 combate intenso. */
+  setCombatIntensity(k) {
+    const m = this._cm; if (!m || !m.on || Math.abs(k - m.k) < 0.02) return;
+    m.k = k;
+    const t = this.ctx.currentTime;
+    m.base.gain.setTargetAtTime(0.55 + 0.45 * Math.min(1, k * 2), t, 0.8);
+    m.perc.gain.setTargetAtTime(Math.max(0, (k - 0.25) / 0.75), t, 0.8);
+    m.drive.gain.setTargetAtTime(Math.max(0, (k - 0.6) / 0.4), t, 0.6);
+  }
+  stopCombatMusic(now = false) {
+    const m = this._cm; if (!m) return;
+    m.on = false; clearTimeout(m.timer); this._cm = null;
+    const t = this.ctx.currentTime, f = now ? 0.05 : 1.5;
+    for (const g of [m.base, m.perc, m.drive]) { g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(g.gain.value, t); g.gain.linearRampToValueAtTime(0, t + f); }
+    setTimeout(() => { for (const g of [m.base, m.perc, m.drive, m.wet]) { try { g.disconnect(); } catch { /* ok */ } } }, f * 1000 + 600);
   }
 
   // ---------------- Ambientes ----------------

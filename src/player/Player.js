@@ -7,7 +7,7 @@ import { BODY, F_MOVE } from '../../shared/collision.js';
 import { store } from '../core/Settings.js';
 import { audio } from '../core/Audio.js';
 
-export const MOVE = { walk: 4.7, sprint: 7.0, crouch: 2.4, accel: 62, friction: 52, airAccel: 14, gravity: 17, jump: 5.9 };
+export const MOVE = { walk: 4.7, sprint: 7.0, crouch: 2.4, accel: 62, friction: 52, airAccel: 14, gravity: 17, jump: 5.9, slideTime: 0.8, lean: 0.45 };
 const _res = { hitX: false, hitZ: false, hitCeil: false, landed: false, stepped: 0 };
 const DEG = Math.PI / 180;
 
@@ -22,6 +22,21 @@ export class Player extends Combatant {
     this.roll = 0; this.surf = 'concrete'; this.viewLight = 1; this._lt = 0;
     this.shake = 0; this.deathT = 0; this.killerPos = null;
     this.mdx = 0; this.mdy = 0;
+    this.leanK = 0; this.leanOff = 0; this.slideT = 0; this.slideCd = 0; this.crouchToggle = false; this.sprintToggle = false;
+  }
+
+  /** Inclinación limitada por las paredes; expone el desplazamiento de la cabeza (leanOX/OZ) para la IA y los impactos. */
+  _lean(dt, cos, sin) {
+    const b = this.body, k = this.leanK;
+    let target = 0;
+    if (Math.abs(k) > 0.01) {
+      const dir = Math.sign(k), rx = cos * dir, rz = -sin * dir, ey = b.y + (this.crouch ? BODY.eyeCrouch : BODY.eyeStand);
+      const hit = this.game.world.raycast(b.x, ey, b.z, rx, 0, rz, MOVE.lean + 0.22, F_MOVE);
+      const lim = hit ? Math.max(0, hit.t - 0.22) : MOVE.lean;
+      target = dir * Math.min(Math.abs(k) * MOVE.lean, lim);
+    }
+    this.leanOff += (target - this.leanOff) * Math.min(1, dt * 14);
+    this.leanOX = cos * this.leanOff; this.leanOZ = -sin * this.leanOff;
   }
 
   spawnAt(s) {
@@ -31,6 +46,7 @@ export class Player extends Combatant {
     this.yaw = s.yaw ?? 0; this.pitch = 0; this.crouch = false; this.crouchK = 0;
     this.health = this.maxHealth; this.alive = true; this.recT = this.recC = this.recYawT = this.recYawC = 0;
     this.deathT = 0; this.stepSmooth = 0; this.spawnProtect = 1.5;
+    this.leanK = this.leanOff = this.leanOX = this.leanOZ = 0; this.slideT = 0; this.crouchToggle = this.sprintToggle = false;
   }
 
   addRecoil(v, h) { this.recT += v * DEG; this.recYawT += h * DEG; this.shake = Math.min(1, this.shake + v * 0.05); }
@@ -54,20 +70,51 @@ export class Player extends Combatant {
     if (canAct) {
       if (input.down('forward')) iz -= 1; if (input.down('back')) iz += 1;
       if (input.down('left')) ix -= 1; if (input.down('right')) ix += 1;
+      if (input.move && (input.move.x || input.move.z)) { ix = input.move.x; iz = input.move.z; }   // joystick táctil (analógico)
     }
     const len = Math.hypot(ix, iz);
-    if (len > 0) { ix /= len; iz /= len; }
-    // agacharse (mantener). Para levantarse hace falta espacio libre.
-    const wantCrouch = canAct && input.down('crouch');
+    if (len > 1) { ix /= len; iz /= len; }
+    // correr: mantener o alternar (se corta al dejar de avanzar)
+    let sprintIn = canAct && (input.down('sprint') || !!input.move?.sprint);
+    if (s.sprintMode === 'toggle') {
+      if (canAct && input.hit('sprint')) this.sprintToggle = !this.sprintToggle;
+      if (iz >= 0 || !canAct) this.sprintToggle = false;
+      sprintIn = this.sprintToggle || (canAct && !!input.move?.sprint);
+    }
+    // agacharse: mantener o alternar. Agacharse corriendo = deslizarse.
+    const crouchHit = canAct && input.hit('crouch');
+    this.slideCd -= dt;
+    if (crouchHit && this.sprinting && b.onGround && this.slideT <= 0 && this.slideCd <= 0) {
+      const sp = Math.hypot(this.vx, this.vz) || 1;
+      this.slideT = MOVE.slideTime; this.slideCd = 0.9;
+      this.slideDx = this.vx / sp; this.slideDz = this.vz / sp; this.slideSpeed = Math.max(MOVE.sprint, sp) * 1.35;
+      audio.slide(this.surf);
+      this.game.onNoise?.(this, 10);
+    } else if (crouchHit && s.crouchMode === 'toggle') this.crouchToggle = !this.crouchToggle;
+    if (this.slideT > 0 && s.crouchMode === 'toggle') this.crouchToggle = false;
+    const wantCrouch = this.slideT > 0 || (canAct && (s.crouchMode === 'toggle' ? this.crouchToggle : input.down('crouch')));
     if (wantCrouch) this.crouch = true;
     else if (this.crouch && w.fits(b.x, b.y, b.z, b.r, BODY.standH)) this.crouch = false;
     this.crouchK += ((this.crouch ? 1 : 0) - this.crouchK) * Math.min(1, dt * 12);
     b.h = this.crouch ? BODY.crouchH : BODY.standH;
-    this.sprinting = canAct && input.down('sprint') && iz < 0 && !this.crouch && b.onGround && this.adsK < 0.2 && Math.abs(ix) < 0.8;
-    const max = (this.crouch ? MOVE.crouch : this.sprinting ? MOVE.sprint : MOVE.walk) * this.moveMult * (iz > 0 ? 0.85 : 1);
+    // asomarse (Q/E): desplaza la cabeza sin sacar el cuerpo de la cobertura
+    const leanIn = canAct && !this.sprinting && this.slideT <= 0 && b.onGround ? (input.down('leanRight') ? 1 : 0) - (input.down('leanLeft') ? 1 : 0) : 0;
+    this.leanK += (leanIn - this.leanK) * Math.min(1, dt * 10);
+    this.sprinting = sprintIn && iz < 0 && !this.crouch && b.onGround && this.adsK < 0.2 && Math.abs(ix) < 0.8 && Math.abs(this.leanK) < 0.3;
+    const max = (this.crouch ? MOVE.crouch : this.sprinting ? MOVE.sprint : MOVE.walk) * this.moveMult * (iz > 0 ? 0.85 : 1) * (1 - 0.4 * Math.abs(this.leanK));
     const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
+    this._lean(dt, cos, sin);
     const wx = ix * cos + iz * sin, wz = -ix * sin + iz * cos;
-    if (b.onGround) {
+    if (this.slideT > 0 && b.onGround) {
+      // deslizamiento: impulso que se frena, con un poco de control lateral
+      this.slideT -= dt;
+      const k = Math.max(0, this.slideT / MOVE.slideTime), steer = ix * dt * 0.9;
+      const dx = this.slideDx * Math.cos(steer) + this.slideDz * Math.sin(steer), dz = -this.slideDx * Math.sin(steer) + this.slideDz * Math.cos(steer);
+      this.slideDx = dx; this.slideDz = dz;
+      const sp = this.slideSpeed * (0.3 + 0.7 * k * k);
+      this.vx = dx * sp; this.vz = dz * sp;
+      if (canAct && input.hit('jump') && w.fits(b.x, b.y + 0.05, b.z, b.r, BODY.standH + 0.3)) { this.slideT = 0; this.vy = MOVE.jump; b.onGround = false; audio.jump(); }
+    } else if (b.onGround) {
       // fricción firme: sin deslizamiento al soltar las teclas
       const sp = Math.hypot(this.vx, this.vz);
       if (sp > 0) { const drop = Math.min(sp, MOVE.friction * dt * (len > 0 ? 0.35 : 1)); this.vx -= (this.vx / sp) * drop; this.vz -= (this.vz / sp) * drop; }
@@ -78,6 +125,7 @@ export class Player extends Combatant {
         this.vy = MOVE.jump; b.onGround = false; audio.jump();
       }
     } else {
+      this.slideT = 0;
       this.vx += wx * MOVE.airAccel * dt; this.vz += wz * MOVE.airAccel * dt;
       const sp2 = Math.hypot(this.vx, this.vz), lim = Math.max(max, MOVE.walk);
       if (sp2 > lim) { this.vx *= lim / sp2; this.vz *= lim / sp2; }
@@ -88,6 +136,7 @@ export class Player extends Combatant {
     w.move(b, this.vx * dt, this.vy * dt, this.vz * dt, _res);
     if (_res.hitX) this.vx = 0;
     if (_res.hitZ) this.vz = 0;
+    if ((_res.hitX || _res.hitZ) && this.slideT > 0) this.slideT = 0;
     if (_res.hitCeil && this.vy > 0) this.vy = 0;
     if (b.onGround) {
       if (_res.landed && vyBefore < -3) {
@@ -153,13 +202,15 @@ export class Player extends Combatant {
     const bobY = -Math.abs(Math.sin(this.bobPhase)) * 0.035 * bobA, bobX = Math.cos(this.bobPhase) * 0.018 * bobA;
     let y = b.y + eye + bobY - this.landK - this.stepSmooth;
     let pitch = this.pitch + this.recC, yaw = this.yaw + this.recYawC, roll = this.roll + Math.cos(this.bobPhase) * 0.004 * bobA;
+    roll -= (this.leanOff / MOVE.lean) * 0.13;                         // inclinación al asomarse
+    if (this.slideT > 0) roll += Math.sin((this.slideT / MOVE.slideTime) * Math.PI) * 0.05;
     if (!this.alive) {
       const k = Math.min(1, this.deathT / 0.7), e = k * k * (3 - 2 * k);
       y = b.y + eye * (1 - e) + 0.28 * e; roll += e * 0.9; pitch = pitch * (1 - e) - 0.25 * e;
     }
     if (this.shake > 0.001) { yaw += (Math.random() - 0.5) * 0.004 * this.shake; pitch += (Math.random() - 0.5) * 0.004 * this.shake; }
     const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
-    cam.position.set(b.x + cos * bobX, y, b.z - sin * bobX);
+    cam.position.set(b.x + cos * bobX + (this.alive ? this.leanOX : 0), y - Math.abs(this.leanOff) * 0.08, b.z - sin * bobX + (this.alive ? this.leanOZ : 0));
     cam.rotation.set(pitch, yaw, roll);
     const base = s.fov, zoom = 1 + (this.adsZoom - 1) * this.adsK * this.adsK * (3 - 2 * this.adsK);
     const sprintFov = this.sprinting ? 4 : 0;

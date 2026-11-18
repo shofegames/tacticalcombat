@@ -1,5 +1,5 @@
-// Punto de entrada: motor, entrada, HUD, menús y transición menú ⇄ partida.
-// Parámetros de desarrollo: ?test (sin pointer lock) · ?play=tdm&map=modern (arranque directo).
+// Punto de entrada: motor, entrada, HUD, menús, controles táctiles y transición menú ⇄ partida.
+// Parámetros de desarrollo: ?test (sin pointer lock) · ?play=tdm&map=modern (arranque directo) · ?touch (forzar táctil).
 import './ui/style.css';
 import { Engine } from './core/Engine.js';
 import { Input } from './core/Input.js';
@@ -9,20 +9,34 @@ import { Game } from './game/Game.js';
 import { Hud } from './ui/Hud.js';
 import { Menu, Loading, Pause } from './ui/Menu.js';
 import { Backdrop } from './ui/Backdrop.js';
+import { TouchControls, wantsTouch } from './ui/Touch.js';
 import { PLAYABLE_MAPS } from '../shared/maps/index.js';
 
 const q = new URLSearchParams(location.search);
+// Primera vez en un dispositivo táctil: calidad baja (los móviles van más justos)
+if (q.has('touch')) window.__TC_FORCE_TOUCH = true;
+if (wantsTouch() && !store.settings.touchInit) { store.settings.touchInit = true; store.set('quality', 'low'); }
+
 const canvas = document.getElementById('view');
 const ui = document.getElementById('ui');
 const engine = new Engine(canvas);
 const input = new Input(canvas);
-input.forceLock = q.has('test');
 const hud = new Hud(ui);
 const menu = new Menu(document.getElementById('menu'), input);
 const loading = new Loading(document.getElementById('loading'));
 const pause = new Pause(document.getElementById('pause'), input);
+const touch = new TouchControls(document.body, input);
 
-let game = null, backdrop = null, lastOpts = null, busy = false;
+let game = null, backdrop = null, lastOpts = null, busy = false, isTouch = false;
+
+/** Táctil o teclado: se decide al empezar cada partida (el ajuste puede cambiar en el menú). */
+function applyInputMode() {
+  isTouch = wantsTouch();
+  input.forceLock = q.has('test') || isTouch;
+  pause.touch = isTouch;
+  document.body.classList.toggle('is-touch', isTouch);
+}
+applyInputMode();
 
 engine.updaters.push((dt, t) => {
   if (game) game.update(dt);
@@ -41,6 +55,8 @@ function startBackdrop() {
 async function startMatch(opts) {
   if (busy) return;
   busy = true; lastOpts = opts;
+  applyInputMode();
+  touch.root.classList.toggle('training', opts.mode === 'training');
   menu.setVisible(false);
   loading.show(opts);
   audio.stopMusic();
@@ -65,6 +81,7 @@ async function startMatch(opts) {
 function exitToMenu() {
   if (game) { game.dispose(); game = null; }
   input.enabled = false; input.unlock();
+  touch.show(false);
   pause.hide();
   menu.setVisible(true);
   startBackdrop();
@@ -74,22 +91,33 @@ function exitToMenu() {
 async function rematch() {
   const opts = lastOpts;
   if (game) { game.dispose(); game = null; }
-  input.enabled = false;
+  input.enabled = false; touch.show(false);
   await startMatch(opts);
 }
 
-pause.onResume = () => input.lock();
+pause.onResume = () => {
+  // en celulares: pantalla completa y horizontal (si el navegador lo permite)
+  if (isTouch && !document.fullscreenElement) {
+    document.documentElement.requestFullscreen?.().then(() => screen.orientation?.lock?.('landscape').catch(() => {})).catch(() => {});
+  }
+  input.lock();
+};
 pause.onQuit = () => exitToMenu();
+touch.onPause = () => { if (game && !game.over && !game.paused) input.onLockChange(false); };
 
 input.onLockChange = (locked) => {
   if (!game || game.over) return;
-  if (locked) { pause.hide(); game.paused = false; }
-  else if (!busy) { game.paused = true; pause.show('pause'); }
+  if (locked) { pause.hide(); game.paused = false; touch.show(isTouch); }
+  else if (!busy) { game.paused = true; touch.show(false); pause.show('pause'); }
 };
-// Sin pointer lock (modo ?test) Esc no libera el ratón: abre la pausa a mano.
+// Sin pointer lock (modo ?test o táctil) Esc no libera el ratón: abre la pausa a mano.
 addEventListener('keydown', (e) => { if (e.code === 'Escape' && input.forceLock && game && !game.paused && !game.over) input.onLockChange(false); });
 // Clic sobre la vista con la partida en marcha y el ratón libre: recaptura.
 canvas.addEventListener('click', () => { if (game && !game.over && !input.active && !pause.visible) input.lock(); });
+// Al terminar la partida se ocultan los controles táctiles (la pantalla de resultados necesita los toques)
+setInterval(() => { if (game?.over && !touch.root.classList.contains('hidden')) touch.show(false); }, 250);
+// Cambiar de pestaña o minimizar en pleno combate: pausa automática
+document.addEventListener('visibilitychange', () => { if (document.hidden && game && !game.over && !game.paused) input.onLockChange(false); });
 
 menu.onStart = (opts) => startMatch(opts);
 
@@ -101,4 +129,4 @@ if (q.get('play')) {
 } else startBackdrop();
 
 // Acceso para depuración desde la consola.
-window.TC = { get game() { return game; }, engine, input, store, hud };
+window.TC = { get game() { return game; }, engine, input, store, hud, touch };

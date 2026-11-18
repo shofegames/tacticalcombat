@@ -10,18 +10,23 @@ export const QUALITY = {
 
 export const DEFAULT_KEYS = {
   forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', crouch: 'KeyC', sprint: 'ShiftLeft',
-  reload: 'KeyR', primary: 'Digit1', secondary: 'Digit2', swap: 'KeyQ', scoreboard: 'Tab', pause: 'Escape', interact: 'KeyF',
+  leanLeft: 'KeyQ', leanRight: 'KeyE', reload: 'KeyR', primary: 'Digit1', secondary: 'Digit2', swap: 'KeyX',
+  lethal: 'KeyG', tactical: 'KeyT', melee: 'KeyV', scoreboard: 'Tab', pause: 'Escape', interact: 'KeyF',
 };
 export const KEY_LABELS = {
-  forward: 'Avanzar', back: 'Retroceder', left: 'Izquierda', right: 'Derecha', jump: 'Saltar', crouch: 'Agacharse', sprint: 'Correr',
-  reload: 'Recargar', primary: 'Arma principal', secondary: 'Arma secundaria', swap: 'Cambiar de arma', scoreboard: 'Marcador', interact: 'Armero (entrenamiento)',
+  forward: 'Avanzar', back: 'Retroceder', left: 'Izquierda', right: 'Derecha', jump: 'Saltar', crouch: 'Agacharse / deslizarse', sprint: 'Correr',
+  leanLeft: 'Asomarse a la izquierda', leanRight: 'Asomarse a la derecha', reload: 'Recargar', primary: 'Arma principal', secondary: 'Arma secundaria',
+  swap: 'Cambiar de arma', lethal: 'Granada', tactical: 'Granada táctica', melee: 'Cuchillo', scoreboard: 'Marcador', interact: 'Armero (entrenamiento)',
 };
+/** Versión del esquema de teclas: al subirla se migran las asignaciones guardadas. */
+const KEYS_VERSION = 2;
 
 const DEFAULTS = {
   quality: 'high', fov: 78, sensitivity: 1.0, adsSensitivity: 0.8, invertY: false,
   master: 0.8, sfx: 1.0, music: 0.5, ambience: 0.7,
   showFps: true, headBob: 1.0, crosshairColor: '#e8f4ff', name: 'Jugador', serverUrl: '',
-  keys: { ...DEFAULT_KEYS },
+  crouchMode: 'hold', adsMode: 'hold', sprintMode: 'hold', rawInput: true, touch: 'auto',
+  keys: { ...DEFAULT_KEYS }, keysVersion: KEYS_VERSION,
 };
 
 export const SKINS = {
@@ -51,9 +56,14 @@ class Store {
   constructor() {
     const s = load('tc.settings', {});
     this.settings = { ...DEFAULTS, ...s, keys: { ...DEFAULT_KEYS, ...(s.keys || {}) } };
+    if ((s.keysVersion || 1) < KEYS_VERSION) { // v1 usaba Q para cambiar de arma: ahora Q/E sirven para asomarse
+      if (this.settings.keys.swap === 'KeyQ') this.settings.keys.swap = 'KeyX';
+      this.settings.keysVersion = KEYS_VERSION;
+    }
+    this.progress = { xp: 0, ...load('tc.progress', {}) };
     if (!QUALITY[this.settings.quality]) this.settings.quality = 'high';
     const l = load('tc.loadout', {});
-    this.loadout = { ...DEFAULT_LOADOUT, skin: 'woodland', finish: 'standard', helmet: 'standard', charm: 'none', ...l };
+    this.loadout = { ...DEFAULT_LOADOUT, skin: 'woodland', finish: 'standard', helmet: 'standard', charm: 'none', tactical: 'smoke', ...l };
     if (!WEAPONS[this.loadout.primary]) this.loadout.primary = DEFAULT_LOADOUT.primary;
     if (!WEAPONS[this.loadout.secondary]) this.loadout.secondary = DEFAULT_LOADOUT.secondary;
     this.stats = { kills: 0, deaths: 0, headshots: 0, shots: 0, hits: 0, matches: 0, wins: 0, losses: 0, timePlayed: 0, bestStreak: 0,
@@ -66,6 +76,7 @@ class Store {
   saveSettings() { save('tc.settings', this.settings); }
   saveLoadout() { save('tc.loadout', this.loadout); }
   saveStats() { save('tc.stats', this.stats); }
+  saveProgress() { save('tc.progress', this.progress); }
   resetStats() {
     this.stats = { kills: 0, deaths: 0, headshots: 0, shots: 0, hits: 0, matches: 0, wins: 0, losses: 0, timePlayed: 0, bestStreak: 0,
       captures: 0, weaponKills: {}, modeMatches: {}, longestKill: 0 };
@@ -77,5 +88,6 @@ export const store = new Store();
 /** Nombre legible de la tecla asignada a una acción. */
 export function keyLabel(action) {
   const c = store.settings.keys[action] || '';
-  return c.replace('Key', '').replace('Digit', '').replace('ShiftLeft', 'Mayús').replace('Space', 'Espacio').replace('Escape', 'Esc');
+  return c.replace('Key', '').replace('Digit', '').replace('ShiftLeft', 'Mayús').replace('Space', 'Espacio').replace('Escape', 'Esc')
+    .replace('Mouse1', 'Rueda').replace('Mouse3', 'Lateral 1').replace('Mouse4', 'Lateral 2');
 }

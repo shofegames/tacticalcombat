@@ -7,6 +7,11 @@ import { store, QUALITY, SKINS, WEAPON_FINISHES, KEY_LABELS } from '../core/Sett
 import { keyName } from '../core/Input.js';
 import { audio } from '../core/Audio.js';
 import { version as PKG_VERSION } from '../../package.json';
+import { GEAR, TACTICALS } from '../../shared/gear.js';
+import { levelInfo, unlockLevel, isUnlocked } from '../../shared/progression.js';
+
+const level = () => levelInfo(store.progress.xp).level;
+const lockTag = (kind, id) => `<em class="lock">🔒 NIVEL ${unlockLevel(kind, id)}</em>`;
 
 export const VERSION = 'v' + PKG_VERSION.replace(/\.0$/, '');
 
@@ -23,6 +28,12 @@ const TIPS = [
   'En Dominación, varios aliados en una zona la capturan más rápido.',
   'Un disparo a la cabeza multiplica el daño. Apunta alto.',
   'Las balas que pasan cerca te desestabilizan: busca cobertura.',
+  'Asómate con Q y E para disparar sin salir de la cobertura.',
+  'Agáchate mientras corres para deslizarte y llegar antes a cubierto.',
+  'Una granada de humo bloquea la visión de los bots durante 15 segundos.',
+  'Si una aturdidora te pilla de espaldas, el efecto es mucho menor.',
+  'Si ves el icono de granada en pantalla, ¡corre en dirección contraria!',
+  'Cada partida da experiencia: sube de nivel para desbloquear armas y camuflajes.',
 ];
 
 /** Valores normalizados (0‒1) para las barras de estadísticas de un arma. */
@@ -47,7 +58,7 @@ export class Menu {
       <header class="m-head">
         <div class="logo"><b>TACTICAL</b><span>COMBAT</span></div>
         <nav>${TABS.map(([id, l]) => `<button data-tab="${id}">${l}</button>`).join('')}</nav>
-        <div class="m-user"><span class="m-name"></span><small>${VERSION}</small></div>
+        <div class="m-user"><div class="m-lvl"><b></b><div class="xp"><i></i></div><small class="xp-txt"></small></div><div><span class="m-name"></span><small>${VERSION}</small></div></div>
       </header>
       <main class="m-body"></main>
       <footer class="m-foot"><span>Ratón para apuntar · Clic izq. disparar · Clic der. apuntar · Esc pausa</span></footer>`;
@@ -63,6 +74,10 @@ export class Menu {
     this.tab = tab;
     this.root.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
     this.root.querySelector('.m-name').textContent = store.settings.name;
+    const li = levelInfo(store.progress.xp);
+    this.root.querySelector('.m-lvl b').textContent = li.level;
+    this.root.querySelector('.m-lvl .xp i').style.width = `${Math.round(li.frac * 100)}%`;
+    this.root.querySelector('.m-lvl .xp-txt').textContent = li.max ? 'NIVEL MÁXIMO' : `${li.cur} / ${li.need} EXP`;
     this.body.className = 'm-body tab-' + tab;
     this['_' + tab](this.body);
   }
@@ -104,8 +119,10 @@ export class Menu {
   }
   _saveMatch() { saveJSON('tc.match', this.match); }
   _loadoutMini() {
-    const l = store.loadout;
-    return `<small>EQUIPAMIENTO</small><div><b>${esc(WEAPONS[l.primary].name)}</b> · ${esc(WEAPONS[l.secondary].name)}</div><span>Cambiar ›</span>`;
+    const l = store.loadout, lv = level();
+    const p = isUnlocked('weapon', l.primary, lv) ? l.primary : 'mk4', s = isUnlocked('weapon', l.secondary, lv) ? l.secondary : 'p9';
+    const tac = isUnlocked('tactical', l.tactical, lv) ? l.tactical : 'smoke';
+    return `<small>EQUIPAMIENTO</small><div><b>${esc(WEAPONS[p].name)}</b> · ${esc(WEAPONS[s].name)}</div><div class="lm-gear">2× Granada · 2× ${GEAR[tac].short} · Cuchillo</div><span>Cambiar ›</span>`;
   }
 
   // ------------------------------------------------------------------ ENTRENAMIENTO
@@ -127,16 +144,26 @@ export class Menu {
 
   // ------------------------------------------------------------------ EQUIPAMIENTO
   _loadout(el) {
-    const l = store.loadout;
+    const l = store.loadout, lv = level();
+    // si algo equipado quedó bloqueado (p. ej. progreso reiniciado), volver a lo básico
+    if (!isUnlocked('weapon', l.primary, lv)) l.primary = 'mk4';
+    if (!isUnlocked('weapon', l.secondary, lv)) l.secondary = 'p9';
+    if (!isUnlocked('skin', l.skin, lv)) l.skin = 'woodland';
+    if (!isUnlocked('finish', l.finish, lv)) l.finish = 'standard';
+    if (!isUnlocked('tactical', l.tactical, lv)) l.tactical = 'smoke';
     this._sel = this._sel && WEAPONS[this._sel] ? this._sel : l.primary;
     const groups = {};
     for (const w of WEAPON_LIST) (groups[w.category] ||= []).push(w);
     const item = (w) => {
-      const eq = w.id === l.primary || w.id === l.secondary;
-      return `<div class="w-item ${w.id === this._sel ? 'sel' : ''} ${eq ? 'eq' : ''}" data-w="${w.id}"><span>${esc(w.name)}</span>${eq ? `<em>${w.slot === 'secondary' ? 'SECUNDARIA' : 'PRINCIPAL'}</em>` : ''}</div>`;
+      const eq = w.id === l.primary || w.id === l.secondary, open = isUnlocked('weapon', w.id, lv);
+      return `<div class="w-item ${w.id === this._sel ? 'sel' : ''} ${eq ? 'eq' : ''} ${open ? '' : 'locked'}" data-w="${w.id}"><span>${esc(w.name)}</span>${eq ? `<em>${w.slot === 'secondary' ? 'SECUNDARIA' : 'PRINCIPAL'}</em>` : open ? '' : lockTag('weapon', w.id)}</div>`;
     };
     const d = WEAPONS[this._sel];
-    const equipped = d.id === l.primary || d.id === l.secondary;
+    const equipped = d.id === l.primary || d.id === l.secondary, dOpen = isUnlocked('weapon', d.id, lv);
+    const opt = (kind, k, cur, label, swatch) => {
+      const open = isUnlocked(kind, k, lv);
+      return `<button data-${kind}="${k}" class="${cur === k ? 'on' : ''} ${open ? '' : 'locked'}" ${open ? '' : 'disabled'} title="${open ? '' : `Se desbloquea en el nivel ${unlockLevel(kind, k)}`}">${swatch}${label}${open ? '' : ` <small>🔒${unlockLevel(kind, k)}</small>`}</button>`;
+    };
     el.innerHTML = `
       <section class="panel list">
         ${Object.entries(groups).map(([cat, ws]) => `<h3>${CATEGORIES[cat]}</h3>${ws.map(item).join('')}`).join('')}
@@ -152,19 +179,25 @@ export class Menu {
           <div><b>${d.mag}</b><span>Cargador</span></div>
           <div><b>${d.reloadType === 'shell' ? `${d.shellTime}s/u` : `${d.reloadTime}s`}</b><span>Recarga</span></div>
         </div>
-        <button class="btn primary" data-equip ${equipped ? 'disabled' : ''}>${equipped ? 'EQUIPADA' : d.slot === 'secondary' ? 'EQUIPAR COMO SECUNDARIA' : 'EQUIPAR COMO PRINCIPAL'}</button>
+        <button class="btn primary" data-equip ${equipped || !dOpen ? 'disabled' : ''}>${!dOpen ? `🔒 SE DESBLOQUEA EN EL NIVEL ${unlockLevel('weapon', d.id)}` : equipped ? 'EQUIPADA' : d.slot === 'secondary' ? 'EQUIPAR COMO SECUNDARIA' : 'EQUIPAR COMO PRINCIPAL'}</button>
+        <h3>GRANADAS</h3>
+        <p class="lead small">Siempre llevas 2 granadas de fragmentación (<b>${keyName(store.settings.keys.lethal)}</b>) y un cuchillo (<b>${keyName(store.settings.keys.melee)}</b>). Elige tu granada táctica (<b>${keyName(store.settings.keys.tactical)}</b>):</p>
+        <div class="seg wrap tac">${TACTICALS.map((k) => opt('tactical', k, l.tactical, GEAR[k].name, `<i class="ico ${k}"></i>`)).join('')}</div>
+        <p class="lead small tac-desc">${esc(GEAR[l.tactical].desc)}</p>
         <h3>APARIENCIA</h3>
-        <label class="opt">Camuflaje del uniforme<div class="seg wrap">${Object.entries(SKINS).map(([k, s]) => `<button data-skin="${k}" class="${l.skin === k ? 'on' : ''}"><i class="sw" style="background:#${s.cloth.toString(16).padStart(6, '0')}"></i>${s.name}</button>`).join('')}</div></label>
-        <label class="opt">Acabado del arma<div class="seg wrap">${Object.entries(WEAPON_FINISHES).map(([k, f]) => `<button data-fin="${k}" class="${l.finish === k ? 'on' : ''}"><i class="sw" style="background:${f.color != null ? '#' + f.color.toString(16).padStart(6, '0') : '#2b2d2f'}"></i>${f.name}</button>`).join('')}</div></label>
+        <label class="opt">Camuflaje del uniforme<div class="seg wrap">${Object.entries(SKINS).map(([k, s]) => opt('skin', k, l.skin, s.name, `<i class="sw" style="background:#${s.cloth.toString(16).padStart(6, '0')}"></i>`)).join('')}</div></label>
+        <label class="opt">Acabado del arma<div class="seg wrap">${Object.entries(WEAPON_FINISHES).map(([k, f]) => opt('finish', k, l.finish, f.name, `<i class="sw" style="background:${f.color != null ? '#' + f.color.toString(16).padStart(6, '0') : '#2b2d2f'}"></i>`)).join('')}</div></label>
       </section>`;
     el.querySelectorAll('[data-w]').forEach((e) => { e.onclick = () => { audio.uiSound('click'); this._sel = e.dataset.w; this._loadout(el); }; });
     el.querySelector('[data-equip]').onclick = () => {
+      if (!dOpen) return;
       audio.uiSound('click');
       if (d.slot === 'secondary') l.secondary = d.id; else l.primary = d.id;
       store.saveLoadout(); this._loadout(el);
     };
     el.querySelectorAll('[data-skin]').forEach((e) => { e.onclick = () => { l.skin = e.dataset.skin; store.saveLoadout(); this._loadout(el); }; });
-    el.querySelectorAll('[data-fin]').forEach((e) => { e.onclick = () => { l.finish = e.dataset.fin; store.saveLoadout(); this._loadout(el); }; });
+    el.querySelectorAll('[data-finish]').forEach((e) => { e.onclick = () => { l.finish = e.dataset.finish; store.saveLoadout(); this._loadout(el); }; });
+    el.querySelectorAll('[data-tactical]').forEach((e) => { e.onclick = () => { l.tactical = e.dataset.tactical; store.saveLoadout(); this._loadout(el); }; });
     const sel = el.querySelector('.w-item.sel'); if (sel) sel.scrollIntoView({ block: 'nearest' });
   }
 
@@ -204,6 +237,7 @@ export function renderSettings(el, input) {
   const range = (k, label, min, max, step, fmt = (v) => v) => `<label class="opt">${label} <output>${fmt(s[k])}</output><input type="range" min="${min}" max="${max}" step="${step}" value="${s[k]}" data-k="${k}" data-num></label>`;
   const check = (k, label) => `<label class="opt check"><input type="checkbox" data-k="${k}" ${s[k] ? 'checked' : ''}> ${label}</label>`;
   const pct = (v) => `${Math.round(v * 100)} %`;
+  const seg = (k, label, opts) => `<label class="opt">${label}<div class="seg">${opts.map(([v, l]) => `<button data-set="${k}" data-v="${v}" class="${s[k] === v ? 'on' : ''}">${l}</button>`).join('')}</div></label>`;
   el.innerHTML = `
     <section class="panel">
       <h2>GRÁFICOS</h2>
@@ -224,12 +258,18 @@ export function renderSettings(el, input) {
       ${range('sensitivity', 'Sensibilidad', 0.1, 3, 0.05, (v) => (+v).toFixed(2))}
       ${range('adsSensitivity', 'Sensibilidad apuntando', 0.2, 1.5, 0.05, (v) => (+v).toFixed(2))}
       ${check('invertY', 'Invertir eje vertical')}
+      ${check('rawInput', 'Movimiento del mouse en bruto (sin aceleración de Windows)')}
+      ${seg('adsMode', 'Apuntar (clic derecho)', [['hold', 'Mantener'], ['toggle', 'Alternar']])}
+      ${seg('crouchMode', 'Agacharse', [['hold', 'Mantener'], ['toggle', 'Alternar']])}
+      ${seg('sprintMode', 'Correr', [['hold', 'Mantener'], ['toggle', 'Alternar']])}
+      ${seg('touch', 'Controles táctiles', [['auto', 'Automático'], ['on', 'Siempre'], ['off', 'Nunca']])}
       <label class="opt">Color de la retícula<input type="color" value="${s.crosshairColor}" data-k="crosshairColor"></label>
       <h3>TECLAS</h3>
       <div class="keys">${Object.entries(KEY_LABELS).map(([a, l]) => `<div class="key"><span>${l}</span><button data-key="${a}">${keyName(s.keys[a])}</button></div>`).join('')}</div>
       <button class="btn" data-resetkeys>RESTABLECER TECLAS</button>
     </section>`;
   el.querySelectorAll('[data-q]').forEach((b) => { b.onclick = () => { store.set('quality', b.dataset.q); renderSettings(el, input); }; });
+  el.querySelectorAll('[data-set]').forEach((b) => { b.onclick = () => { store.set(b.dataset.set, b.dataset.v); renderSettings(el, input); }; });
   el.querySelectorAll('input[data-num]').forEach((r) => {
     r.oninput = () => { store.set(r.dataset.k, +r.value); r.previousElementSibling.textContent = formatOut(r); };
   });
@@ -246,6 +286,17 @@ export function renderSettings(el, input) {
     };
   });
   el.querySelector('[data-resetkeys]').onclick = () => { store.resetKeys(); renderSettings(el, input); };
+}
+/** Tabla de controles (teclado y ratón) con las teclas actuales. */
+export function controlsHTML() {
+  const k = (a) => `<kbd>${keyName(store.settings.keys[a])}</kbd>`;
+  const rows = [
+    ['Moverse', `${k('forward')}${k('left')}${k('back')}${k('right')}`], ['Apuntar / disparar', '<kbd>Clic der.</kbd><kbd>Clic izq.</kbd>'],
+    ['Correr', k('sprint')], ['Saltar', k('jump')], ['Agacharse', k('crouch')], ['Deslizarse', `${k('sprint')} + ${k('crouch')}`],
+    ['Asomarse', `${k('leanLeft')}${k('leanRight')}`], ['Recargar', k('reload')], ['Cambiar de arma', `${k('primary')}${k('secondary')}${k('swap')} <kbd>Rueda</kbd>`],
+    ['Granada', k('lethal')], ['Granada táctica', k('tactical')], ['Cuchillo', k('melee')], ['Marcador', k('scoreboard')], ['Pausa', '<kbd>Esc</kbd>'],
+  ];
+  return `<div class="controls">${rows.map(([n, v]) => `<div><span>${n}</span><span>${v}</span></div>`).join('')}</div>`;
 }
 function formatOut(r) {
   const k = r.dataset.k, v = +r.value;
@@ -284,18 +335,27 @@ export class Pause {
   show(kind = 'pause') {
     this.root.className = 'overlay pause';
     if (kind === 'ready') {
-      this.root.innerHTML = `<div class="p-card ready"><h1>LISTO PARA DESPLEGAR</h1><p>Haz clic para capturar el ratón y empezar.</p><button class="btn primary big" data-a="resume">EMPEZAR</button></div>`;
+      this.root.innerHTML = `<div class="p-card ready"><h1>LISTO PARA DESPLEGAR</h1>
+        <p>${this.touch ? 'Joystick a la izquierda para moverte, desliza a la derecha para mirar.' : 'Haz clic para capturar el ratón y empezar.'}</p>
+        ${this.touch ? '' : controlsHTML()}
+        <button class="btn primary big" data-a="resume">EMPEZAR</button></div>`;
     } else {
       this.root.innerHTML = `<div class="p-card"><h1>PAUSA</h1>
         <button class="btn primary big" data-a="resume">CONTINUAR</button>
         <button class="btn" data-a="settings">AJUSTES</button>
+        ${this.touch ? '' : '<button class="btn" data-a="controls">CONTROLES</button>'}
         <button class="btn danger" data-a="quit">ABANDONAR PARTIDA</button></div>
         <div class="p-settings hidden"></div>`;
-      this.root.querySelector('[data-a=settings]').onclick = () => {
-        const ps = this.root.querySelector('.p-settings');
-        ps.classList.toggle('hidden');
-        if (!ps.classList.contains('hidden')) { ps.className = 'p-settings m-body tab-settings'; renderSettings(ps, this.input); }
+      const ps = this.root.querySelector('.p-settings');
+      const panel = (what) => {
+        const open = !ps.classList.contains('hidden') && ps.dataset.what === what;
+        if (open) { ps.classList.add('hidden'); return; }
+        ps.dataset.what = what; ps.className = 'p-settings m-body tab-settings';
+        if (what === 'settings') renderSettings(ps, this.input);
+        else ps.innerHTML = `<section class="panel"><h2>CONTROLES</h2>${controlsHTML()}<p class="lead small">Puedes cambiar cualquier tecla en Ajustes → Teclas (también el botón central y los laterales del ratón).</p></section>`;
       };
+      this.root.querySelector('[data-a=settings]').onclick = () => panel('settings');
+      this.root.querySelector('[data-a=controls]')?.addEventListener('click', () => panel('controls'));
       this.root.querySelector('[data-a=quit]').onclick = (e) => {
         if (e.target.dataset.sure) { this.onQuit?.(); return; }
         e.target.dataset.sure = '1'; e.target.textContent = '¿ABANDONAR? PULSA DE NUEVO';

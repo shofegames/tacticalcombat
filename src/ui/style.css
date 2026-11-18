@@ -292,3 +292,104 @@ button { font-family: var(--display); }
   .cards { grid-template-columns: 1fr; }
   .stat-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ------------------------------------------------------------------ v0.2: equipo, progreso, controles */
+/* iconos de equipo (dibujados con CSS) */
+.ico { display: inline-block; width: 14px; height: 16px; vertical-align: -3px; margin: 0 4px 0 2px; position: relative; }
+.ico.frag { background: #6d7d4c; border-radius: 45% 45% 50% 50%; box-shadow: inset -2px -2px 0 rgba(0, 0, 0, 0.35); }
+.ico.frag::before { content: ""; position: absolute; left: 4px; top: -4px; width: 6px; height: 4px; background: #aaa; }
+.ico.smoke, .ico.flash { width: 11px; border-radius: 2px; background: #8b9196; }
+.ico.flash { background: #3a3d42; box-shadow: inset 0 -5px 0 #d8b030; }
+.ico.smoke { box-shadow: inset 0 -5px 0 #e6e6e0; }
+.ico.knife { width: 18px; height: 4px; vertical-align: 2px; background: linear-gradient(90deg, #222 0 35%, #cfd3d6 35%); clip-path: polygon(0 0, 85% 0, 100% 50%, 85% 100%, 0 100%); }
+.gear-row { display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; font-size: 15px; font-weight: 700; }
+.gear-row span { background: rgba(8, 12, 14, 0.5); padding: 2px 8px; display: inline-flex; align-items: center; }
+.gear-row span.empty { opacity: 0.35; }
+.gear-row b { font-size: 11px; color: var(--accent); margin-right: 3px; }
+.gear-row small { font-size: 10px; color: var(--ink-dim); margin-left: 4px; letter-spacing: 0.08em; }
+.flash-white { position: absolute; inset: 0; background: #fff; opacity: 0; z-index: 5; }
+.nade-warn { position: absolute; left: 50%; top: 50%; }
+.nade { position: absolute; left: 0; top: 0; }
+.nade i { position: absolute; left: -17px; top: -17px; width: 34px; height: 34px; border-radius: 50%; border: 2px solid #ffb02e; background: rgba(40, 20, 0, 0.55); }
+.nade i::before { content: ""; position: absolute; left: 10px; top: 9px; width: 11px; height: 14px; background: #ffb02e; border-radius: 45% 45% 50% 50%; }
+.nade.close i { border-color: #ff3b30; animation: blink .25s infinite alternate; }
+.nade.close i::before { background: #ff3b30; }
+
+/* experiencia en resultados */
+.r-xp { flex-basis: 100%; background: var(--panel); border: 1px solid var(--line); padding: 12px 16px; }
+.xp-head { display: flex; align-items: baseline; gap: 14px; }
+.xp-head .lvl { font-size: 22px; font-weight: 700; letter-spacing: 0.14em; }
+.xp-head .lvl-up { color: var(--accent); font-weight: 700; letter-spacing: 0.16em; animation: pulse .5s infinite alternate; }
+.xp-head b { margin-left: auto; font-size: 24px; color: var(--accent); }
+.xp-bar { height: 8px; background: rgba(255, 255, 255, 0.1); position: relative; margin: 8px 0; overflow: hidden; }
+.xp-bar i { position: absolute; top: 0; bottom: 0; left: 0; }
+.xp-bar .old { background: rgba(232, 180, 74, 0.55); }
+.xp-bar .new { left: var(--from); background: var(--accent); animation: xpfill 1.4s .4s ease-out both; }
+@keyframes xpfill { from { width: 0; } to { width: calc(var(--to) - var(--from)); } }
+.xp-parts { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 14px; color: var(--ink-dim); }
+.xp-parts b { color: var(--ink); }
+.xp-parts .next { margin-left: auto; }
+.xp-unlocks { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.xp-unlocks small { color: var(--accent); letter-spacing: 0.2em; font-weight: 700; margin-right: 6px; }
+.xp-unlocks span { background: rgba(232, 180, 74, 0.16); border: 1px solid rgba(232, 180, 74, 0.5); padding: 3px 10px; font-weight: 700; }
+
+/* nivel en la cabecera del menú */
+.m-user { display: flex; align-items: center; gap: 16px; }
+.m-lvl { display: grid; grid-template-columns: auto 120px; grid-template-rows: auto auto; column-gap: 8px; align-items: center; }
+.m-lvl b { grid-row: span 2; font: 700 22px var(--display); color: #15120a; background: var(--accent); width: 40px; height: 44px; display: flex; align-items: center; justify-content: center; clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); }
+.m-lvl .xp { height: 5px; background: rgba(255, 255, 255, 0.12); align-self: end; }
+.m-lvl .xp i { display: block; height: 100%; background: var(--accent); }
+.m-lvl .xp-txt { font: 600 11px var(--display); color: var(--ink-dim); letter-spacing: 0.08em; text-align: left; align-self: start; }
+.lm-gear { font-size: 13px !important; color: var(--ink-dim); }
+
+/* bloqueos */
+.w-item.locked span { opacity: 0.45; }
+.lock { font-style: normal; font-size: 10px; letter-spacing: 0.12em; color: var(--ink-faint) !important; }
+.seg button.locked { opacity: 0.45; cursor: not-allowed; }
+.seg button small { font-size: 10px; }
+.lead.small { font-size: 13px; margin-bottom: 10px; }
+.seg.tac { margin-bottom: 8px; }
+
+/* tabla de controles */
+.controls { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 18px; text-align: left; margin: 6px 0 14px; }
+.controls div { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-dim); border-bottom: 1px solid var(--line); padding: 3px 0; }
+kbd { font: 700 12px var(--display); color: var(--ink); background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.2); border-bottom-width: 2px; padding: 1px 6px; margin-left: 3px; border-radius: 3px; white-space: nowrap; }
+.p-card.ready { width: 560px; }
+
+/* ------------------------------------------------------------------ controles táctiles */
+.touch { position: fixed; inset: 0; z-index: 15; touch-action: none; user-select: none; -webkit-user-select: none; }
+.t-look { position: absolute; inset: 0 0 0 40%; }
+.t-stick-zone { position: absolute; left: 0; top: 30%; bottom: 0; width: 40%; }
+.t-stick { position: fixed; width: 112px; height: 112px; margin: -56px 0 0 -56px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.35); background: rgba(0, 0, 0, 0.2); display: none; pointer-events: none; }
+.t-stick.on { display: block; }
+.t-stick.sprint { border-color: var(--accent); }
+.t-stick i { position: absolute; left: 32px; top: 32px; width: 48px; height: 48px; border-radius: 50%; background: rgba(255, 255, 255, 0.55); }
+.t-btn { position: absolute; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.4); background: rgba(10, 14, 17, 0.45); color: #fff;
+  font: 700 10px var(--display); letter-spacing: 0.06em; width: 54px; height: 54px; padding: 0; touch-action: none; }
+.t-btn.on { background: rgba(232, 180, 74, 0.55); border-color: var(--accent); }
+.t-pause { left: 50%; top: 10px; transform: translateX(-50%); width: 40px; height: 40px; font-size: 14px; }
+.t-board { left: calc(50% + 50px); top: 10px; width: 40px; height: 40px; font-size: 16px; }
+.t-actions { position: absolute; right: 0; bottom: 0; width: 1px; height: 1px; }
+.t-fire { right: 30px; bottom: 60px; width: 86px; height: 86px; font-size: 13px; border-color: rgba(255, 80, 60, 0.7); background: rgba(120, 20, 10, 0.35); }
+.t-ads { right: 130px; bottom: 40px; }
+.t-jump { right: 40px; bottom: 160px; }
+.t-crouch { right: 196px; bottom: 26px; }
+.t-reload { right: 112px; bottom: 120px; }
+.t-swap { right: 100px; bottom: 200px; }
+.t-frag { right: 172px; bottom: 100px; }
+.t-tac { right: 172px; bottom: 166px; }
+.t-knife { right: 30px; bottom: 228px; }
+.t-lean-l, .t-lean-r { bottom: 260px; width: 42px; height: 42px; font-size: 14px; }
+.t-lean-l { right: 150px; } .t-lean-r { right: 100px; }
+body.is-touch .radar { width: 120px; height: 120px; left: 10px; top: 10px; }
+body.is-touch .health { left: 140px; top: 12px; bottom: auto; width: 140px; }
+body.is-touch .hp-num { font-size: 26px; }
+body.is-touch .ammo { right: auto; left: 12px; bottom: 12px; text-align: left; }
+body.is-touch .ammo .slots, body.is-touch .ammo .gear-row { justify-content: flex-start; }
+body.is-touch .mag { font-size: 34px; }
+body.is-touch .killfeed { top: 60px; right: 12px; transform: scale(0.8); transform-origin: right top; }
+body.is-touch .hud-top { top: 56px; transform: translateX(-50%) scale(0.8); transform-origin: top center; }
+body.is-touch .fps { display: none; }
+body.is-touch .gear-row b, body.is-touch .hint { display: none; }
+.t-interact { display: none; right: 230px; bottom: 120px; }
+.touch.training .t-interact { display: block; }

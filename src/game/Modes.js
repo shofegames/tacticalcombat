@@ -243,7 +243,8 @@ class Training extends BaseMode {
   update(dt) { super.update(dt); }
   hudInfo() {
     const p = this.game.player;
-    return { kind: 'training', kills: p.kills, objective: `[${keyLabel('interact')}] cambiar de arma · Munición infinita${this.opts.hostileBots ? ' · Bots hostiles' : ' · Bots pasivos'}` };
+    const armory = this.game.input.forceLock && document.body.classList.contains('is-touch') ? 'ARMERO' : `[${keyLabel('interact')}]`;
+    return { kind: 'training', kills: p.kills, objective: `${armory} cambiar de arma · Munición infinita${this.opts.hostileBots ? ' · Bots hostiles' : ' · Bots pasivos'}` };
   }
 }
 

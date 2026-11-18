@@ -15,6 +15,8 @@ export class Combatant {
     this.weaponId = 'mk4';
     this.respawnT = 0; this.lastHurt = -99; this.spawnProtect = 0; this.lastShotT = -99;
     this.model = null;
+    this.leanOX = 0; this.leanOZ = 0;   // desplazamiento de la cabeza al asomarse
+    this.gear = null;                   // granadas disponibles {lethal, tactical, tacType}
   }
   get eyeY() { return this.body.y + (this.crouch ? BODY.eyeCrouch : BODY.eyeStand); }
   get speed() { return Math.hypot(this.vx, this.vz); }
