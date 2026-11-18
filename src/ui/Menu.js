@@ -104,7 +104,8 @@ export class Menu {
         <label class="opt">Tiempo límite <output>${time} min</output><input type="range" min="3" max="30" step="1" value="${time}" data-k="timeLimit"></label>
         <div class="loadout-mini">${this._loadoutMini()}</div>
         <button class="btn primary big" data-go>DESPLEGAR</button>
-      </section>`;
+      </section>
+      <div class="m-deploy"><span>${MODES[m.mode].short} · ${esc(MAPS[m.map].name)}</span><button class="btn primary big" data-go>DESPLEGAR</button></div>`;
     el.querySelectorAll('[data-mode]').forEach((c) => { c.onclick = () => { audio.uiSound('click'); Object.assign(m, { mode: c.dataset.mode, bots: null, scoreLimit: null, timeLimit: null }); this._saveMatch(); this._play(el); }; });
     el.querySelectorAll('[data-map]').forEach((c) => { c.onclick = () => { audio.uiSound('click'); m.map = c.dataset.map; this._saveMatch(); this._play(el); }; });
     el.querySelectorAll('[data-diff]').forEach((c) => { c.onclick = () => { audio.uiSound('click'); m.difficulty = c.dataset.diff; this._saveMatch(); this._play(el); }; });
@@ -112,10 +113,10 @@ export class Menu {
       r.oninput = () => { m[r.dataset.k] = +r.value; r.previousElementSibling.textContent = r.dataset.k === 'timeLimit' ? `${r.value} min` : r.value; this._saveMatch(); };
     });
     el.querySelector('.loadout-mini').onclick = () => this.show('loadout');
-    el.querySelector('[data-go]').onclick = () => {
+    el.querySelectorAll('[data-go]').forEach((b) => { b.onclick = () => {
       audio.uiSound('click');
       this.onStart?.({ mode: m.mode, map: m.map, difficulty: m.difficulty, bots, scoreLimit: m.scoreLimit ?? score, timeLimit: m.timeLimit ?? time });
-    };
+    }; });
   }
   _saveMatch() { saveJSON('tc.match', this.match); }
   _loadoutMini() {
@@ -132,14 +133,15 @@ export class Menu {
       <section class="panel wide">
         <h2>CAMPO DE TIRO</h2>
         <p class="lead">${MAPS.training.desc} Galería con dianas fijas y móviles a varias distancias, y una casa de asalto con bots.
-        Munición infinita y armero: pulsa la tecla de interacción para probar todas las armas del arsenal.</p>
+        Munición infinita y armero: pulsa ${document.body.classList.contains('is-touch') ? 'el botón ARMERO' : `<kbd>${keyName(store.settings.keys.interact)}</kbd>`} para probar todas las armas del arsenal.</p>
         <label class="opt check"><input type="checkbox" data-k="hostileBots" ${t.hostileBots ? 'checked' : ''}> Bots hostiles en la casa de asalto</label>
         <label class="opt">Dificultad<div class="seg">${Object.entries(DIFFICULTY).map(([k, d]) => `<button data-diff="${k}" class="${t.difficulty === k ? 'on' : ''}">${d.label}</button>`).join('')}</div></label>
         <button class="btn primary big" data-go>ENTRAR AL CAMPO DE TIRO</button>
-      </section>`;
+      </section>
+      <div class="m-deploy"><span>CAMPO DE TIRO</span><button class="btn primary big" data-go>ENTRAR</button></div>`;
     el.querySelector('[data-k=hostileBots]').onchange = (e) => { t.hostileBots = e.target.checked; saveJSON('tc.train', t); };
     el.querySelectorAll('[data-diff]').forEach((c) => { c.onclick = () => { t.difficulty = c.dataset.diff; saveJSON('tc.train', t); this._training(el); }; });
-    el.querySelector('[data-go]').onclick = () => { audio.uiSound('click'); this.onStart?.({ mode: 'training', map: 'training', difficulty: t.difficulty, hostileBots: t.hostileBots }); };
+    el.querySelectorAll('[data-go]').forEach((b) => { b.onclick = () => { audio.uiSound('click'); this.onStart?.({ mode: 'training', map: 'training', difficulty: t.difficulty, hostileBots: t.hostileBots }); }; });
   }
 
   // ------------------------------------------------------------------ EQUIPAMIENTO
@@ -337,10 +339,11 @@ export class Pause {
     if (kind === 'ready') {
       this.root.innerHTML = `<div class="p-card ready"><h1>LISTO PARA DESPLEGAR</h1>
         <p>${this.touch ? 'Joystick a la izquierda para moverte, desliza a la derecha para mirar.' : 'Haz clic para capturar el ratón y empezar.'}</p>
-        ${this.touch ? '' : controlsHTML()}
+        ${this.touch ? '<p class="p-rotate">⟳ Pon el celular en horizontal</p>' : controlsHTML()}
         <button class="btn primary big" data-a="resume">EMPEZAR</button></div>`;
     } else {
       this.root.innerHTML = `<div class="p-card"><h1>PAUSA</h1>
+        ${this.touch ? '<p class="p-rotate">⟳ Pon el celular en horizontal para seguir</p>' : ''}
         <button class="btn primary big" data-a="resume">CONTINUAR</button>
         <button class="btn" data-a="settings">AJUSTES</button>
         ${this.touch ? '' : '<button class="btn" data-a="controls">CONTROLES</button>'}

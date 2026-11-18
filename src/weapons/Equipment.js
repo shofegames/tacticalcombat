@@ -113,7 +113,9 @@ export class Equipment {
     this.meleeCd -= dt; this.busy -= dt;
     if (!canAct || !p.alive || this.busy > 0 || !ws.canGear()) return;
     const gear = p.gear;
-    if (input.hit('melee') && this.meleeCd <= 0) {
+    // en pantallas táctiles el cuchillo sale solo al disparar con un enemigo pegado
+    const autoKnife = input.touch && input.mouse.leftPressed && this.meleeCd <= 0 && this._enemyClose(p, 1.7);
+    if ((input.hit('melee') || autoKnife) && this.meleeCd <= 0) {
       this.busy = MELEE.dur; this.meleeCd = GEAR.knife.cooldown;
       ws.startGear(MELEE.dur, MELEE.act / MELEE.dur, () => this.melee(p));
       this.view.play('knife', MELEE.dur); audio.knife();
@@ -127,6 +129,15 @@ export class Equipment {
     this.busy = THROW.dur;
     ws.startGear(THROW.dur, THROW.act / THROW.dur, () => this._playerThrow(type));
     this.view.play(type, THROW.dur); audio.mech('pin');
+  }
+  /** ¿Hay un enemigo vivo a menos de r metros y delante? */
+  _enemyClose(p, r) {
+    const g = this.game, sin = Math.sin(p.yaw), cos = Math.cos(p.yaw);
+    return g.combatants.some((c) => {
+      if (c === p || !c.alive || (!g.hostile(p, c) && !c.isDummy)) return false;
+      const dx = c.body.x - p.body.x, dz = c.body.z - p.body.z, d = Math.hypot(dx, dz);
+      return d < r && Math.abs(c.body.y - p.body.y) < 1.4 && (-dx * sin - dz * cos) / (d || 1) > 0.6;
+    });
   }
   _playerThrow(type) {
     const g = this.game, p = g.player, cam = g.engine.camera, def = GEAR[type];

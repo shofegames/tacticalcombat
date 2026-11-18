@@ -11,6 +11,7 @@ import { Menu, Loading, Pause } from './ui/Menu.js';
 import { Backdrop } from './ui/Backdrop.js';
 import { TouchControls, wantsTouch } from './ui/Touch.js';
 import { PLAYABLE_MAPS } from '../shared/maps/index.js';
+import { GEAR } from '../shared/gear.js';
 
 const q = new URLSearchParams(location.search);
 // Primera vez en un dispositivo táctil: calidad baja (los móviles van más justos)
@@ -33,6 +34,7 @@ let game = null, backdrop = null, lastOpts = null, busy = false, isTouch = false
 function applyInputMode() {
   isTouch = wantsTouch();
   input.forceLock = q.has('test') || isTouch;
+  input.touch = isTouch;
   pause.touch = isTouch;
   document.body.classList.toggle('is-touch', isTouch);
 }
@@ -43,6 +45,9 @@ engine.updaters.push((dt, t) => {
   else if (backdrop) backdrop.update(dt, t);
 });
 engine.start();
+
+// Sin zoom por pellizco en Safari (ignora user-scalable=no); el doble toque lo anula touch-action en el CSS.
+for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(ev, (e) => e.preventDefault());
 
 // El audio solo puede arrancar tras un gesto del usuario.
 addEventListener('pointerdown', () => { audio.init(); if (!game) audio.startMusic(); }, { capture: true });
@@ -68,6 +73,7 @@ async function startMatch(opts) {
     game = g;
     hud.onExit = () => exitToMenu();
     hud.onRematch = () => rematch();
+    touch.setTactical(GEAR[g.player.gear?.tacType || 'smoke'].short);
     loading.hide();
     input.enabled = true;
     pause.show('ready');
@@ -116,6 +122,8 @@ addEventListener('keydown', (e) => { if (e.code === 'Escape' && input.forceLock 
 canvas.addEventListener('click', () => { if (game && !game.over && !input.active && !pause.visible) input.lock(); });
 // Al terminar la partida se ocultan los controles táctiles (la pantalla de resultados necesita los toques)
 setInterval(() => { if (game?.over && !touch.root.classList.contains('hidden')) touch.show(false); }, 250);
+// Celular puesto en vertical en plena partida: pausa (el juego se juega en horizontal)
+matchMedia('(orientation: portrait)').addEventListener('change', (e) => { if (e.matches && isTouch && game && !game.over && !game.paused) input.onLockChange(false); });
 // Cambiar de pestaña o minimizar en pleno combate: pausa automática
 document.addEventListener('visibilitychange', () => { if (document.hidden && game && !game.over && !game.paused) input.onLockChange(false); });
 

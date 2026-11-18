@@ -83,6 +83,7 @@ export class Player extends Combatant {
     }
     // agacharse: mantener o alternar. Agacharse corriendo = deslizarse.
     const crouchHit = canAct && input.hit('crouch');
+    const crouchToggle = s.crouchMode === 'toggle' || input.touch;   // en el celular, agacharse es un interruptor
     this.slideCd -= dt;
     if (crouchHit && this.sprinting && b.onGround && this.slideT <= 0 && this.slideCd <= 0) {
       const sp = Math.hypot(this.vx, this.vz) || 1;
@@ -90,9 +91,9 @@ export class Player extends Combatant {
       this.slideDx = this.vx / sp; this.slideDz = this.vz / sp; this.slideSpeed = Math.max(MOVE.sprint, sp) * 1.35;
       audio.slide(this.surf);
       this.game.onNoise?.(this, 10);
-    } else if (crouchHit && s.crouchMode === 'toggle') this.crouchToggle = !this.crouchToggle;
-    if (this.slideT > 0 && s.crouchMode === 'toggle') this.crouchToggle = false;
-    const wantCrouch = this.slideT > 0 || (canAct && (s.crouchMode === 'toggle' ? this.crouchToggle : input.down('crouch')));
+    } else if (crouchHit && crouchToggle) this.crouchToggle = !this.crouchToggle;
+    if (this.slideT > 0 && crouchToggle) this.crouchToggle = false;
+    const wantCrouch = this.slideT > 0 || (canAct && (crouchToggle ? this.crouchToggle : input.down('crouch')));
     if (wantCrouch) this.crouch = true;
     else if (this.crouch && w.fits(b.x, b.y, b.z, b.r, BODY.standH)) this.crouch = false;
     this.crouchK += ((this.crouch ? 1 : 0) - this.crouchK) * Math.min(1, dt * 12);
