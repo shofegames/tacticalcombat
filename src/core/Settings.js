@@ -74,3 +74,8 @@ class Store {
   resetKeys() { this.settings.keys = { ...DEFAULT_KEYS }; this.saveSettings(); }
 }
 export const store = new Store();
+/** Nombre legible de la tecla asignada a una acción. */
+export function keyLabel(action) {
+  const c = store.settings.keys[action] || '';
+  return c.replace('Key', '').replace('Digit', '').replace('ShiftLeft', 'Mayús').replace('Space', 'Espacio').replace('Escape', 'Esc');
+}
