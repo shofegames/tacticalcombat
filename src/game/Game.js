@@ -338,7 +338,9 @@ export class Game {
     for (const b of this.bots) b.model?.dispose();
     for (const t of this.targets) { this.engine.scene.remove(t.root); t.root.traverse((o) => o.geometry?.dispose()); }
     this.vm.dispose(); this.effects.dispose(); this.mapRenderer.dispose();
-    this.engine.scene.traverse((o) => { if (o.isMesh && o.parent === this.engine.scene) this.engine.scene.remove(o); });
+    const scene = this.engine.scene;
+    if (this.mode?.group) { scene.remove(this.mode.group); this.mode.group.traverse((o) => { o.geometry?.dispose(); o.material?.map?.dispose(); o.material?.dispose?.(); }); }
+    for (const o of [...scene.children]) if (o.isMesh) scene.remove(o);
     disposeMaterials(); disposeTextures();
     this.engine.renderer.renderLists.dispose();
   }
