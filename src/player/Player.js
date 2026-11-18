@@ -3,7 +3,7 @@
 // paredes ni deslizamiento artificial: aceleración y fricción altas).
 import * as THREE from 'three';
 import { Combatant } from '../entities/Combatant.js';
-import { BODY, F_MOVE } from '../../shared/collision.js';
+import { BODY, F_MOVE, F_BULLET } from '../../shared/collision.js';
 import { store } from '../core/Settings.js';
 import { audio } from '../core/Audio.js';
 
@@ -23,6 +23,36 @@ export class Player extends Combatant {
     this.shake = 0; this.deathT = 0; this.killerPos = null;
     this.mdx = 0; this.mdy = 0;
     this.leanK = 0; this.leanOff = 0; this.slideT = 0; this.slideCd = 0; this.crouchToggle = false; this.sprintToggle = false;
+  }
+
+  /**
+   * Asistencia de apuntado («fricción»): con la mira sobre un enemigo visible, la sensibilidad baja
+   * para no pasarse de largo. No mueve la mira por el jugador. Devuelve el factor de sensibilidad.
+   */
+  _aimAssist(dt, input, s) {
+    const mode = s.aimAssist || 'auto';
+    if (mode === 'off' || (mode === 'auto' && !input.touch)) return 1;
+    this._aaT = (this._aaT ?? 0) - dt;
+    if (this._aaT <= 0) {
+      this._aaT = 0.05;
+      const g = this.game, cam = g.engine.camera, cx = cam.position.x, cy = cam.position.y, cz = cam.position.z;
+      const cp = Math.cos(this.pitch), fx = -Math.sin(this.yaw) * cp, fy = Math.sin(this.pitch), fz = -Math.cos(this.yaw) * cp;
+      let on = false;
+      for (const c of g.combatants) {
+        if (c === this || !c.alive || !g.hostile(this, c)) continue;
+        const dx = c.body.x - cx, dy = c.body.y + (c.crouch ? 0.8 : 1.15) - cy, dz = c.body.z - cz, d = Math.hypot(dx, dy, dz);
+        if (d > 70 || d < 0.5) continue;
+        const along = dx * fx + dy * fy + dz * fz;
+        if (along <= 0) continue;
+        const off = Math.sqrt(Math.max(0, d * d - along * along));        // distancia del enemigo a la línea de la mira
+        if (off > 0.55 + d * 0.012) continue;
+        if (!g.world.los(cx, cy, cz, c.body.x, c.body.y + 1.2, c.body.z, F_BULLET)) continue;
+        on = true; break;
+      }
+      this._aaOn = on;
+    }
+    this._aaK = (this._aaK ?? 1) + ((this._aaOn ? 0.5 : 1) - (this._aaK ?? 1)) * Math.min(1, dt * 12);
+    return this._aaK;
   }
 
   /**
@@ -113,10 +143,15 @@ export class Player extends Combatant {
     this.mdx = 0; this.mdy = 0;
     if (canAct) {
       const zoomK = 1 / (1 + (this.adsZoom - 1) * this.adsK);
-      const sens = 0.0022 * s.sensitivity * (1 + (s.adsSensitivity * zoomK - 1) * this.adsK);
+      const assist = this._aimAssist(dt, input, s);
+      const sens = 0.0022 * s.sensitivity * (1 + (s.adsSensitivity * zoomK - 1) * this.adsK) * assist;
       this.mdx = input.mouse.dx; this.mdy = input.mouse.dy;
       this.yaw -= input.mouse.dx * sens;
       this.pitch -= input.mouse.dy * sens * (s.invertY ? -1 : 1);
+      // mirar con las flechas del teclado (laptops sin mouse)
+      const kl = 2.3 * (s.keyLook ?? 1) * dt / (1 + (this.adsZoom - 1) * this.adsK);
+      const kx = (input.down('lookLeft') ? 1 : 0) - (input.down('lookRight') ? 1 : 0), ky = (input.down('lookUp') ? 1 : 0) - (input.down('lookDown') ? 1 : 0);
+      if (kx || ky) { this.yaw += kx * kl; this.pitch += ky * kl * 0.7; this.mdx -= kx * 6; this.mdy -= ky * 4; }
       this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch));
     }
     // ---- trepando o saltando un obstáculo: movimiento guiado ----

@@ -9,6 +9,9 @@ export const TEAM_COLORS = { a: 0x2f7fd8, b: 0xd8452f, ffa: 0xd8a02f };
 
 function seg(fn) {
   const b = new PropBatch(); b.base.identity(); fn(b);
+  // rendimiento: un único material (con colores por vértice) por segmento del cuerpo = una sola llamada de dibujo
+  const all = []; for (const list of b.byMat.values()) all.push(...list);
+  b.byMat.clear(); b.byMat.set('fabric', all);
   const meshes = b.build(256);
   const g = new THREE.Group();
   for (const m of meshes) g.add(m);
@@ -82,14 +85,20 @@ export class Soldier {
   setWeapon(id) {
     if (this.weaponId === id) return;
     if (this.gun) { this.gunMount.remove(this.gun); this.gun.traverse((o) => { if (o.geometry) o.geometry.dispose(); }); }
-    this.gun = buildWeaponModel(id, 'standard'); this.weaponId = id;
-    this.gun.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    this.gun = buildWeaponModel(id, 'standard', { lod: true }); this.weaponId = id;   // versión ligera: una sola malla
+    this.gun.traverse((o) => { if (o.isMesh) o.castShadow = this._shadow ?? true; });
     this.gunMount.add(this.gun);
   }
   muzzleWorld(out) {
     if (!this.gun) return out.copy(this.root.position).setY(this.root.position.y + 1.4);
     this.root.updateMatrixWorld(true);
     return this.gun.localToWorld(out.copy(this.gun.userData.muzzle));
+  }
+  /** Proyectar sombra solo cuando está cerca de la cámara (las sombras de soldados son lo más caro de dibujar). */
+  setShadow(on) {
+    if (this._shadow === on) return;
+    this._shadow = on;
+    this.root.traverse((o) => { if (o.isMesh) o.castShadow = on; });
   }
   hit() { this.flinch = 1; }
   die(dx = 0, dz = 1) {

@@ -6,7 +6,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { store } from './Settings.js';
+import { store, QUALITY_ORDER } from './Settings.js';
 import { setAnisotropy } from '../gfx/Textures.js';
 
 const FinalShader = {
@@ -47,12 +47,15 @@ export class Engine {
     this.vmScene.add(this.vmCamera);
     this.fx = FinalShader.uniforms;
     this.time = 0; this.fps = 60; this._acc = 0; this._frames = 0;
+    // rendimiento adaptativo: escala de resolución dinámica (0.6–1) y bajada automática de calidad
+    this.dynScale = 1; this.adaptive = false; this._win = 0; this._winFrames = 0; this._good = 0; this._bad = 0; this._sf = 0;
+    this.onAutoQuality = null;
     this.updaters = [];
     this.running = false;
     this.maxAniso = this.renderer.capabilities.getMaxAnisotropy();
     this.applyQuality();
     addEventListener('resize', () => this.resize());
-    store.onChange((k) => { if (k === 'quality') this.applyQuality(); });
+    store.onChange((k) => { if (k === 'quality') this.applyQuality(); else if (k === 'dynamicRes') { this.dynScale = 1; this.resize(); } });
     this._tick = this._tick.bind(this);
   }
 
@@ -61,6 +64,7 @@ export class Engine {
     this.q = q;
     setAnisotropy(Math.min(q.aniso, this.maxAniso));
     this.renderer.shadowMap.enabled = q.shadows > 0;
+    this.renderer.shadowMap.autoUpdate = (q.shadowEvery || 1) <= 1;
     this.renderer.shadowMap.needsUpdate = true;
     if (this.composer) { this.composer.dispose(); this.composer = null; }
     if (q.post) {
@@ -86,7 +90,7 @@ export class Engine {
 
   resize() {
     const w = innerWidth, h = innerHeight, q = this.q;
-    const pr = Math.min(devicePixelRatio || 1, q.prCap) * q.scale;
+    const pr = Math.min(devicePixelRatio || 1, q.prCap) * q.scale * (store.settings.dynamicRes ? this.dynScale : 1);
     this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h, false);
     this.camera.aspect = this.vmCamera.aspect = w / h;
@@ -107,7 +111,47 @@ export class Engine {
     this.time += dt;
     this._acc += raw; this._frames++;
     if (this._acc >= 0.5) { this.fps = Math.round(this._frames / this._acc); this._acc = 0; this._frames = 0; }
+    this._win += raw; this._winFrames++;
+    if (this._win >= 1) { this._adapt(this._winFrames / this._win); this._win = 0; this._winFrames = 0; }
     for (const u of this.updaters) u(dt, this.time);
+    this.render();
+  }
+
+  /** Ajuste automático cada segundo: baja la resolución si faltan FPS, la sube si sobran; en último caso, baja la calidad. */
+  _adapt(fps) {
+    if (!this.adaptive || document.hidden) { this._good = this._bad = 0; return; }
+    const s = store.settings;
+    if (s.dynamicRes) {
+      if (fps < 50 && this.dynScale > 0.6) { this.dynScale = Math.max(0.6, Math.round((this.dynScale - 0.1) * 100) / 100); this._good = 0; this.resize(); }
+      else if (fps >= 57) { if (++this._good >= 4 && this.dynScale < 1) { this.dynScale = Math.min(1, Math.round((this.dynScale + 0.05) * 100) / 100); this._good = 0; this.resize(); } }
+      else this._good = 0;
+    }
+    if (s.autoQuality) {
+      const atMin = !s.dynamicRes || this.dynScale <= 0.6;
+      if (fps < 40 && atMin) {
+        if (++this._bad >= 4) {
+          this._bad = 0;
+          const i = QUALITY_ORDER.indexOf(s.quality);
+          if (i > 0) { const nq = QUALITY_ORDER[i - 1]; this.dynScale = 0.85; store.set('quality', nq); this.onAutoQuality?.(nq); }
+        }
+      } else this._bad = 0;
+    }
+  }
+
+  /**
+   * Compila de antemano todos los materiales (también los de objetos ocultos: trazadoras, fogonazos,
+   * granadas…) y dibuja un fotograma, para que la partida no se congele la primera vez que aparecen.
+   */
+  async warmup() {
+    const hidden = [];
+    for (const sc of [this.scene, this.vmScene]) sc.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true; } });
+    try {
+      if (this.renderer.compileAsync) { await this.renderer.compileAsync(this.scene, this.camera); await this.renderer.compileAsync(this.vmScene, this.vmCamera); }
+      else { this.renderer.compile(this.scene, this.camera); this.renderer.compile(this.vmScene, this.vmCamera); }
+      this.renderer.shadowMap.needsUpdate = true;
+      this.render();
+    } finally { for (const o of hidden) o.visible = false; }
+    this.renderer.shadowMap.needsUpdate = true;
     this.render();
   }
 
@@ -115,6 +159,7 @@ export class Engine {
     const r = this.renderer;
     r.info.reset();
     this.fx.uTime.value = this.time;
+    if (r.shadowMap.enabled && !r.shadowMap.autoUpdate && (this._sf = (this._sf + 1) % (this.q.shadowEvery || 1)) === 0) r.shadowMap.needsUpdate = true;
     if (this.composer) this.composer.render();
     else {
       r.setRenderTarget(null);

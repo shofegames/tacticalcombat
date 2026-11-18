@@ -1,31 +1,36 @@
 // Ajustes, equipamiento y estadísticas persistentes (localStorage).
 import { DEFAULT_LOADOUT, WEAPONS } from '../../shared/weapons.js';
 
+// shadowEvery: cada cuántos fotogramas se recalculan las sombras (2 = a 30 Hz; los cambios son imperceptibles).
+// shadowRange: hasta qué distancia proyectan sombra los soldados (lo más caro de dibujar).
 export const QUALITY = {
-  low: { label: 'Bajo', shadows: 0, post: false, bloom: false, msaa: 0, tex: 256, prCap: 1, scale: 0.85, lights: 4, particles: 0.5, aniso: 2 },
-  medium: { label: 'Medio', shadows: 1024, post: true, bloom: true, msaa: 0, tex: 512, prCap: 1, scale: 1, lights: 6, particles: 0.8, aniso: 4 },
-  high: { label: 'Alto', shadows: 2048, post: true, bloom: true, msaa: 4, tex: 512, prCap: 1.5, scale: 1, lights: 8, particles: 1, aniso: 8 },
-  ultra: { label: 'Ultra', shadows: 4096, post: true, bloom: true, msaa: 4, tex: 1024, prCap: 2, scale: 1, lights: 10, particles: 1.3, aniso: 16 },
+  low: { label: 'Bajo', shadows: 0, post: false, bloom: false, msaa: 0, tex: 256, prCap: 1, scale: 0.8, lights: 3, particles: 0.5, aniso: 2, shadowEvery: 2, shadowRange: 0 },
+  medium: { label: 'Medio', shadows: 1024, post: true, bloom: true, msaa: 0, tex: 512, prCap: 1, scale: 1, lights: 4, particles: 0.8, aniso: 4, shadowEvery: 2, shadowRange: 18 },
+  high: { label: 'Alto', shadows: 2048, post: true, bloom: true, msaa: 2, tex: 512, prCap: 1.25, scale: 1, lights: 6, particles: 1, aniso: 8, shadowEvery: 1, shadowRange: 28 },
+  ultra: { label: 'Ultra', shadows: 4096, post: true, bloom: true, msaa: 4, tex: 1024, prCap: 2, scale: 1, lights: 8, particles: 1.3, aniso: 16, shadowEvery: 1, shadowRange: 60 },
 };
+export const QUALITY_ORDER = ['low', 'medium', 'high', 'ultra'];
 
 export const DEFAULT_KEYS = {
   forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', crouch: 'KeyC', sprint: 'ShiftLeft',
   leanLeft: 'KeyQ', leanRight: 'KeyE', reload: 'KeyR', primary: 'Digit1', secondary: 'Digit2', swap: 'KeyX',
   lethal: 'KeyG', tactical: 'KeyT', melee: 'KeyV', inspect: 'KeyI', scoreboard: 'Tab', pause: 'Escape', interact: 'KeyF',
+  lookLeft: 'ArrowLeft', lookRight: 'ArrowRight', lookUp: 'ArrowUp', lookDown: 'ArrowDown',
 };
 export const KEY_LABELS = {
   forward: 'Avanzar', back: 'Retroceder', left: 'Izquierda', right: 'Derecha', jump: 'Saltar', crouch: 'Agacharse / deslizarse', sprint: 'Correr',
   leanLeft: 'Asomarse a la izquierda', leanRight: 'Asomarse a la derecha', reload: 'Recargar', primary: 'Arma principal', secondary: 'Arma secundaria',
   swap: 'Cambiar de arma', lethal: 'Granada', tactical: 'Granada táctica', melee: 'Cuchillo', inspect: 'Inspeccionar arma', scoreboard: 'Marcador', interact: 'Armero (entrenamiento)',
+  lookLeft: 'Mirar a la izquierda', lookRight: 'Mirar a la derecha', lookUp: 'Mirar arriba', lookDown: 'Mirar abajo',
 };
 /** Versión del esquema de teclas: al subirla se migran las asignaciones guardadas. */
 const KEYS_VERSION = 2;
 
 const DEFAULTS = {
-  quality: 'high', fov: 78, sensitivity: 1.0, adsSensitivity: 0.8, invertY: false,
+  quality: 'medium', dynamicRes: true, autoQuality: true, settingsVersion: 3, fov: 78, sensitivity: 1.0, adsSensitivity: 0.8, invertY: false,
   master: 0.8, sfx: 1.0, music: 0.5, ambience: 0.7,
   showFps: true, headBob: 1.0, crosshairColor: '#e8f4ff', name: 'Jugador', serverUrl: '',
-  crouchMode: 'hold', adsMode: 'hold', sprintMode: 'hold', rawInput: true, touch: 'auto',
+  crouchMode: 'hold', adsMode: 'hold', sprintMode: 'hold', rawInput: false, keyLook: 1.0, aimAssist: 'auto', touch: 'auto',
   keys: { ...DEFAULT_KEYS }, keysVersion: KEYS_VERSION,
 };
 
@@ -60,8 +65,14 @@ class Store {
       if (this.settings.keys.swap === 'KeyQ') this.settings.keys.swap = 'KeyX';
       this.settings.keysVersion = KEYS_VERSION;
     }
+    if ((s.settingsVersion || 1) < 3) {
+      // v0.4: «Alto» era el valor por defecto y resultó demasiado pesado para muchos equipos
+      if (this.settings.quality === 'high' || this.settings.quality === 'ultra') this.settings.quality = 'medium';
+      this.settings.dynamicRes = true; this.settings.autoQuality = true; this.settings.settingsVersion = 3;
+      this.settings.rawInput = false;   // con touchpad, el movimiento en bruto (sin aceleración de Windows) se siente lentísimo
+    }
     this.progress = { xp: 0, ...load('tc.progress', {}) };
-    if (!QUALITY[this.settings.quality]) this.settings.quality = 'high';
+    if (!QUALITY[this.settings.quality]) this.settings.quality = 'medium';
     const l = load('tc.loadout', {});
     this.loadout = { ...DEFAULT_LOADOUT, skin: 'woodland', finish: 'standard', helmet: 'standard', charm: 'none', tactical: 'smoke', ...l };
     if (!WEAPONS[this.loadout.primary]) this.loadout.primary = DEFAULT_LOADOUT.primary;

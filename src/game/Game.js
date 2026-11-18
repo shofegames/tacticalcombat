@@ -71,6 +71,11 @@ export class Game {
     this.mode.init();
     for (const c of this.combatants) this.spawn(c, true);
     this.hud.attach(this);
+    // preparar todos los efectos ahora (con la pantalla de carga) para que la partida no se trabe al empezar
+    onProgress(0.96, 'Preparando efectos');
+    this.player.applyCamera(this.engine.camera, 0);
+    this._updateShadows(true);
+    await this.engine.warmup();
     audio.startAmbience(d.env.ambience, d.env.reverb);
     audio.startCombatMusic(d.era);
     this._music = 0;
@@ -305,6 +310,8 @@ export class Game {
     if (canAct && inp.keys.has(store.settings.keys.scoreboard)) this.hud.showScoreboard(true); else this.hud.showScoreboard(false);
     // bots
     if (live || this.over) for (const b of this.bots) b.update(live ? dt : 0);
+    this._shT = (this._shT ?? 0) - dt;
+    if (this._shT <= 0) { this._shT = 0.25; this._updateShadows(); }
     else for (const b of this.bots) if (b.model) b.model.update(dt, b._pose());
     // reapariciones
     for (const c of this.combatants) {
@@ -334,6 +341,12 @@ export class Game {
     this.hud.update(dt);
     store.stats.timePlayed += dt;
     inp.endFrame();
+  }
+
+  /** Solo los soldados cercanos proyectan sombra (all = todos, para precompilar sus materiales de sombra). */
+  _updateShadows(all = false) {
+    const R = this.engine.q.shadowRange || 0, cam = this.engine.camera.position;
+    for (const b of this.bots) if (b.model) b.model.setShadow(all ? true : R > 0 && b.alive && Math.hypot(b.body.x - cam.x, b.body.z - cam.z) < R);
   }
 
   /** Intensidad de la música: sube con el combate cercano y baja con la calma. */

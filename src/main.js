@@ -4,7 +4,7 @@ import './ui/style.css';
 import { Engine } from './core/Engine.js';
 import { Input } from './core/Input.js';
 import { audio } from './core/Audio.js';
-import { store } from './core/Settings.js';
+import { store, QUALITY } from './core/Settings.js';
 import { Game } from './game/Game.js';
 import { Hud } from './ui/Hud.js';
 import { Menu, Loading, Pause } from './ui/Menu.js';
@@ -43,9 +43,12 @@ function applyInputMode() {
 applyInputMode();
 
 engine.updaters.push((dt, t) => {
+  // el ajuste automático de rendimiento solo mide durante el juego en marcha
+  engine.adaptive = !!(game && !game.paused && !game.over);
   if (game) game.update(dt);
   else if (backdrop) backdrop.update(dt, t);
 });
+engine.onAutoQuality = (q) => { if (game) hud.toast(`Calidad ajustada a ${QUALITY[q].label} para ir más fluido`, 3); };
 engine.start();
 
 // Sin zoom por pellizco en Safari (ignora user-scalable=no); el doble toque lo anula touch-action en el CSS.

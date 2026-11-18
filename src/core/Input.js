@@ -21,7 +21,7 @@ export class Input {
     addEventListener('keydown', (e) => {
       if (this.captureNext) { e.preventDefault(); const f = this.captureNext; this.captureNext = null; f(e.code); return; }
       if (!this.enabled) return;
-      if (['Tab', 'Space', 'ArrowUp', 'ArrowDown', 'F1'].includes(e.code) || e.code.startsWith('Digit') || (e.ctrlKey && e.code === 'KeyW')) e.preventDefault();
+      if (['Tab', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'F1'].includes(e.code) || e.code.startsWith('Digit') || (e.ctrlKey && e.code === 'KeyW')) e.preventDefault();
       this.press(e.code);
     });
     addEventListener('keyup', (e) => this.release(e.code));
@@ -29,7 +29,7 @@ export class Input {
     document.addEventListener('mousemove', (e) => {
       if (!this.active) return;
       // algunos navegadores entregan picos espurios al capturar el puntero
-      if (Math.abs(e.movementX) > 600 || Math.abs(e.movementY) > 600) return;
+      if (Math.abs(e.movementX) > 1500 || Math.abs(e.movementY) > 1500) return;
       this.mouse.dx += e.movementX; this.mouse.dy += e.movementY;
     });
     document.addEventListener('mousedown', (e) => {
@@ -47,7 +47,19 @@ export class Input {
     // los botones laterales disparan «atrás/adelante» en el navegador: se bloquea durante la partida
     document.addEventListener('auxclick', (e) => { if (this.enabled) e.preventDefault(); });
     addEventListener('mouseup', (e) => { if (this.enabled && (e.button === 3 || e.button === 4)) e.preventDefault(); });
-    document.addEventListener('wheel', (e) => { if (this.active) this.mouse.wheel += Math.sign(e.deltaY); }, { passive: true });
+    // rueda: el desplazamiento con dos dedos del touchpad manda decenas de eventos pequeños;
+    // se acumula y solo cuenta un «paso» claro, con una pausa entre cambios de arma
+    this._wheelAcc = 0; this._wheelT = 0;
+    document.addEventListener('wheel', (e) => {
+      if (!this.active || Math.abs(e.deltaY) < Math.abs(e.deltaX)) return;
+      const d = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+      const now = performance.now();
+      if (now - (this._wheelLast || 0) > 400) this._wheelAcc = 0;   // un gesto nuevo empieza de cero
+      this._wheelLast = now;
+      this._wheelAcc += d;
+      if (Math.abs(this._wheelAcc) >= 90 && now - this._wheelT > 280) { this.mouse.wheel += Math.sign(this._wheelAcc); this._wheelT = now; this._wheelAcc = 0; }
+      if (now - this._wheelT < 280) this._wheelAcc = 0;
+    }, { passive: true });
     document.addEventListener('contextmenu', (e) => { if (this.enabled) e.preventDefault(); });
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === this.dom;

@@ -275,20 +275,36 @@ const MODELS = {
       .set('magPos', [0, -0.1, -0.11]).set('adsDist', 0.3);
   },
   viper9(g) {
-    g.tube(0.024, 0.3, 0, 0.055, -0.09, 'body', 'main', 0.024, 14);            // cajón tubular
-    g.box(0.036, 0.05, 0.2, 0, 0.02, -0.03, 'body');
-    g.box(0.046, 0.05, 0.15, 0, 0.04, -0.27, 'polymer');                       // guardamanos
-    g.tube(0.008, 0.07, 0, 0.055, -0.375, 'steel');
-    g.box(0.012, 0.045, 0.012, 0, 0.1, -0.31, 'dark'); g.tube(0.02, 0.012, 0, 0.1, -0.31, 'dark', 'main', 0.02);
-    g.box(0.03, 0.03, 0.02, 0, 0.09, 0.03, 'dark');
-    g.box(0.01, 0.014, 0.22, -0.018, 0.045, 0.17, 'steel'); g.box(0.01, 0.014, 0.22, 0.018, 0.045, 0.17, 'steel');
-    g.box(0.046, 0.09, 0.02, 0, 0.03, 0.285, 'polymer');
-    pistolGrip(g); trigger(g);
-    g.box(0.024, 0.16, 0.036, 0, -0.085, -0.1, 'dark', 'mag', 0.12, 0, 0);
-    g.box(0.024, 0.06, 0.034, 0, -0.18, -0.118, 'dark', 'mag', 0.3, 0, 0);
-    g.cyl(0.007, 0.03, -0.03, 0.065, -0.2, 'bright', 'slide', 0, 0, HP);        // palanca de montar
-    g.set('muzzle', [0, 0.055, -0.415]).set('eject', [0.03, 0.06, -0.06]).set('sight', [0, 0.112, 0.03]).set('left', [-0.005, 0.0, -0.27])
-      .set('magPos', [0, -0.1, -0.1]).set('adsDist', 0.2);
+    // cajón tubular con ventana de expulsión (cerrojo visible) y tubo de montar sobre el cañón
+    g.tube(0.024, 0.32, 0, 0.055, -0.09, 'body', 'main', 0.024, 28);
+    g.cut(0.016, 0.02, 0.05, 0.021, 0.06, -0.06);
+    g.box(0.022, 0.014, 0.046, 0.004, 0.058, -0.06, 'bright', 'inner');
+    g.tube(0.009, 0.17, 0, 0.083, -0.225, 'body', 'main', 0.009, 16);
+    // grupo de disparo de polímero con empuñadura y guardamonte
+    g.prof([[0.07, 0.036], [0.07, 0.012], [0.045, 0.0], [-0.06, 0.0], [-0.07, 0.02], [-0.07, 0.036]], 0.034, 0, 'polymer');
+    g.prof([[0.012, 0.002], [0.048, 0.002], [0.082, -0.1], [0.07, -0.112], [0.045, -0.108], [0.03, -0.06]], 0.03, 0, 'polymer');
+    trigger(g);
+    // guardamanos acanalado
+    g.prof([[-0.21, 0.062], [-0.345, 0.062], [-0.35, 0.042], [-0.345, 0.012], [-0.21, 0.012], [-0.205, 0.036]], 0.05, 0, 'polymer');
+    for (let i = 0; i < 4; i++) for (const s of [-1, 1]) g.cut(0.006, 0.03, 0.012, s * 0.025, 0.036, -0.235 - i * 0.03);
+    // cañón y bocacha de tres patas
+    g.tube(0.0085, 0.07, 0, 0.055, -0.385, 'steel');
+    g.tube(0.012, 0.03, 0, 0.055, -0.405, 'dark', 'main', 0.012, 16);
+    // miras: túnel delantero con poste y tambor trasero con orificio
+    g.prof([[-0.3, 0.09], [-0.33, 0.09], [-0.325, 0.124], [-0.305, 0.124]], 0.03, 0, 'dark');
+    g.hole(0.0095, 0.08, 0, 0.11, -0.315, 'main', HP, 0, 0, 18);
+    g.box(0.0025, 0.014, 0.004, 0, 0.104, -0.315, 'dark', 'inner');
+    g.cyl(0.017, 0.024, 0, 0.104, 0.03, 'dark', 'main', 0, 0, HP, 20);
+    g.hole(0.0035, 0.06, 0, 0.108, 0.03, 'main', HP, 0, 0, 12);
+    // culata retráctil
+    g.box(0.01, 0.014, 0.22, -0.018, 0.05, 0.17, 'steel'); g.box(0.01, 0.014, 0.22, 0.018, 0.05, 0.17, 'steel');
+    g.prof([[0.272, 0.08], [0.296, 0.08], [0.296, -0.012], [0.272, -0.012]], 0.048, 0, 'polymer');
+    // brocal y cargador curvo
+    g.prof([[-0.07, 0.04], [-0.132, 0.04], [-0.134, -0.006], [-0.07, -0.006]], 0.032, 0, 'polymer');
+    g.prof([[-0.08, 0.004], [-0.12, 0.004], [-0.124, -0.08], [-0.135, -0.15], [-0.15, -0.2], [-0.115, -0.208], [-0.103, -0.155], [-0.092, -0.08]], 0.024, 0, 'dark', 'mag');
+    g.cyl(0.007, 0.034, -0.026, 0.083, -0.27, 'bright', 'slide', 0, 0, HP);    // palanca de montar
+    g.set('muzzle', [0, 0.055, -0.42]).set('eject', [0.03, 0.06, -0.06]).set('sight', [0, 0.108, 0.03]).set('left', [-0.005, 0.0, -0.27])
+      .set('magPos', [0, -0.1, -0.11]).set('adsDist', 0.2);
   },
   swift45(g) {
     g.box(0.044, 0.085, 0.2, 0, 0.03, -0.08, 'body');                          // cuerpo compacto
@@ -305,16 +321,26 @@ const MODELS = {
       .set('magPos', [0, -0.12, -0.075]).set('adsDist', 0.2);
   },
   breacher(g) {
-    g.box(0.04, 0.06, 0.24, 0, 0.035, -0.03, 'steel');                         // cajón
-    g.tube(0.013, 0.5, 0, 0.055, -0.4, 'steel', 'main', 0.013, 14);            // cañón
-    g.tube(0.012, 0.36, 0, 0.022, -0.33, 'dark', 'main', 0.012, 12);           // tubo almacén
-    g.tube(0.024, 0.16, 0, 0.022, -0.3, 'polymer', 'pump', 0.024, 12);         // bomba
-    for (let i = 0; i < 6; i++) g.tube(0.026, 0.008, 0, 0.022, -0.24 - i * 0.022, 'dark', 'pump', 0.026, 12);
-    g.box(0.036, 0.065, 0.26, 0, 0.012, 0.2, 'polymer', 'main', -0.14, 0, 0);  // culata
-    g.box(0.038, 0.115, 0.022, 0, -0.012, 0.335, 'dark');
-    g.box(0.03, 0.09, 0.04, 0, -0.045, 0.04, 'polymer', 'main', 0.5, 0, 0); trigger(g);
-    g.box(0.008, 0.012, 0.008, 0, 0.074, -0.64, 'brass');                      // punto de mira
-    g.box(0.006, 0.02, 0.05, 0.022, 0.04, -0.06, 'dark');
+    // cajón con su silueta y ventana de expulsión (cerrojo visible)
+    g.prof([[0.06, 0.066], [-0.17, 0.07], [-0.176, 0.05], [-0.176, 0.0], [-0.14, -0.006], [0.02, -0.006], [0.06, 0.01]], 0.042, 0, 'steel');
+    g.cut(0.012, 0.024, 0.07, 0.021, 0.042, -0.07);
+    g.box(0.03, 0.02, 0.064, 0.004, 0.042, -0.07, 'bright', 'inner');
+    // cañón con banda ventilada y punto de mira de latón
+    g.tube(0.0125, 0.49, 0, 0.055, -0.415, 'steel', 'main', 0.0125, 24);
+    g.box(0.008, 0.006, 0.46, 0, 0.071, -0.41, 'dark');
+    for (let i = 0; i < 10; i++) g.cut(0.012, 0.004, 0.014, 0, 0.0695, -0.21 - i * 0.042);
+    g.cyl(0.0038, 0.01, 0, 0.078, -0.64, 'brass', 'main', 0, 0, 0, 10);
+    // tubo almacén y abrazadera
+    g.tube(0.012, 0.36, 0, 0.022, -0.35, 'dark', 'main', 0.012, 20);
+    g.prof([[-0.53, 0.068], [-0.556, 0.068], [-0.556, 0.008], [-0.53, 0.008]], 0.03, 0, 'dark');
+    // bomba con anillos de agarre
+    g.tube(0.024, 0.16, 0, 0.022, -0.3, 'polymer', 'pump', 0.024, 24);
+    for (let i = 0; i < 6; i++) g.tube(0.0258, 0.007, 0, 0.022, -0.245 - i * 0.022, 'dark', 'pump', 0.0258, 24);
+    // culata con empuñadura de pistola y cantonera
+    g.prof([[0.055, 0.062], [0.33, 0.032], [0.345, 0.026], [0.345, -0.086], [0.33, -0.092], [0.12, -0.03], [0.07, -0.08], [0.05, -0.085], [0.035, -0.006]], 0.038, 0, 'polymer');
+    g.box(0.04, 0.12, 0.014, 0, -0.03, 0.352, 'dark');
+    trigger(g);
+    g.box(0.006, 0.02, 0.05, -0.022, 0.03, -0.1, 'dark');                     // retén de la corredera
     g.set('muzzle', [0, 0.055, -0.655]).set('eject', [0.03, 0.045, -0.06]).set('sight', [0, 0.082, 0.0]).set('left', [0, 0.0, -0.3])
       .set('magPos', [0, -0.02, -0.12]).set('leftOnPump', true).set('adsDist', 0.24);
   },
@@ -485,9 +511,39 @@ const detailed = new Map();   // id -> [{part, mat, geometry}]
 export function setDetailedWeapon(id, pieces) { detailed.set(id, pieces); }
 export function hasDetailedWeapons() { return detailed.size > 0; }
 
-/** Crea el modelo de un arma con el acabado cosmético indicado. */
-export function buildWeaponModel(id, finish = 'standard') {
+// Versión ligera para las armas de los bots: todas las piezas en una malla con colores por vértice.
+const LOD_COLORS = { steel: 0x3a3d42, dark: 0x1d1e21, bright: 0x8a8e94, body: 0x26282a, polymer: 0x1c1d1f, wood: 0x6e4a32, brass: 0xc9a14a,
+  lens: 0x10202e, dot: 0xff3020, holo: 0x40e0ff, glowC: 0x60e8ff, glowO: 0xff9a40, white: 0xc9ced4 };
+let lodMat = null;
+function buildLod(id) {
+  const g = new Gun('standard');
+  MODELS[id](g);
+  const list = [], c = new THREE.Color();
+  for (const { mat, list: geos } of g.parts.values()) {
+    c.set(LOD_COLORS[mat] ?? 0x333333);
+    for (const geo of geos) {
+      for (const k of Object.keys(geo.attributes)) if (!['position', 'normal'].includes(k)) geo.deleteAttribute(k);
+      const n = geo.attributes.position.count, col = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+      geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      list.push(geo);
+    }
+  }
+  const merged = mergeGeometries(list, false); list.forEach((x) => x.dispose());
+  lodMat ||= new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.45 });
+  const root = new THREE.Group(), mesh = new THREE.Mesh(merged, lodMat);
+  root.add(mesh);
+  const u = root.userData;
+  u.parts = { main: root };
+  for (const k of ['muzzle', 'eject', 'sight', 'left']) u[k] = new THREE.Vector3(...g.meta[k]);
+  u.magPos = g.meta.magPos ? new THREE.Vector3(...g.meta.magPos) : u.left.clone();
+  return root;
+}
+
+/** Crea el modelo de un arma con el acabado cosmético indicado. opts.lod = versión ligera (bots). */
+export function buildWeaponModel(id, finish = 'standard', opts = {}) {
   const key = MODELS[id] ? id : 'mk4';
+  if (opts.lod) { const m = buildLod(key); m.userData.weaponId = id; return m; }
   const tpl = detailed.get(key) || null;
   const g = new Gun(finish, !!tpl);
   runBuilder(key, g);

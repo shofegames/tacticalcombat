@@ -246,6 +246,8 @@ export function renderSettings(el, input) {
       <label class="opt">Calidad<div class="seg">${Object.entries(QUALITY).map(([k, q]) => `<button data-q="${k}" class="${s.quality === k ? 'on' : ''}">${q.label}</button>`).join('')}</div></label>
       ${range('fov', 'Campo de visión', 60, 110, 1, (v) => `${v}°`)}
       ${range('headBob', 'Balanceo de cámara', 0, 1, 0.05, pct)}
+      ${check('dynamicRes', 'Resolución dinámica (baja la resolución si faltan FPS)')}
+      ${check('autoQuality', 'Bajar la calidad automáticamente si el equipo no llega')}
       ${check('showFps', 'Mostrar FPS')}
       <h2>AUDIO</h2>
       ${range('master', 'Volumen general', 0, 1, 0.05, pct)}
@@ -260,7 +262,12 @@ export function renderSettings(el, input) {
       ${range('sensitivity', 'Sensibilidad', 0.1, 3, 0.05, (v) => (+v).toFixed(2))}
       ${range('adsSensitivity', 'Sensibilidad apuntando', 0.2, 1.5, 0.05, (v) => (+v).toFixed(2))}
       ${check('invertY', 'Invertir eje vertical')}
-      ${check('rawInput', 'Movimiento del mouse en bruto (sin aceleración de Windows)')}
+      ${check('rawInput', 'Mouse en bruto, sin aceleración de Windows (solo con mouse externo)')}
+      ${range('keyLook', 'Velocidad de mirar con las flechas', 0.3, 2.5, 0.05, (v) => (+v).toFixed(2))}
+      ${seg('aimAssist', 'Asistencia de apuntado', [['auto', 'Solo táctil'], ['on', 'Siempre'], ['off', 'Nunca']])}
+      <p class="lead small">¿Juegas con el <b>touchpad</b> de la laptop? Windows lo bloquea mientras tocas el teclado, así que no podrías apuntar
+        mientras te mueves. Arréglalo en <b>Configuración → Bluetooth y dispositivos → Panel táctil → Sensibilidad: «Más sensible»</b>,
+        o usa las <b>flechas</b> para mirar. Activar la <b>asistencia de apuntado</b> también ayuda.</p>
       ${seg('adsMode', 'Apuntar (clic derecho)', [['hold', 'Mantener'], ['toggle', 'Alternar']])}
       ${seg('crouchMode', 'Agacharse', [['hold', 'Mantener'], ['toggle', 'Alternar']])}
       ${seg('sprintMode', 'Correr', [['hold', 'Mantener'], ['toggle', 'Alternar']])}
@@ -294,6 +301,7 @@ export function controlsHTML() {
   const k = (a) => `<kbd>${keyName(store.settings.keys[a])}</kbd>`;
   const rows = [
     ['Moverse', `${k('forward')}${k('left')}${k('back')}${k('right')}`], ['Apuntar / disparar', '<kbd>Clic der.</kbd><kbd>Clic izq.</kbd>'],
+    ['Mirar (sin mouse)', `${k('lookLeft')}${k('lookUp')}${k('lookDown')}${k('lookRight')}`],
     ['Correr', k('sprint')], ['Saltar', k('jump')], ['Agacharse', k('crouch')], ['Deslizarse', `${k('sprint')} + ${k('crouch')}`],
     ['Asomarse', `${k('leanLeft')}${k('leanRight')}`], ['Recargar', k('reload')], ['Cambiar de arma', `${k('primary')}${k('secondary')}${k('swap')} <kbd>Rueda</kbd>`],
     ['Granada', k('lethal')], ['Granada táctica', k('tactical')], ['Cuchillo', k('melee')], ['Saltar muros / trepar', `${k('jump')} contra el borde`],
@@ -304,7 +312,7 @@ export function controlsHTML() {
 function formatOut(r) {
   const k = r.dataset.k, v = +r.value;
   if (k === 'fov') return `${v}°`;
-  if (k === 'sensitivity' || k === 'adsSensitivity') return v.toFixed(2);
+  if (k === 'sensitivity' || k === 'adsSensitivity' || k === 'keyLook') return v.toFixed(2);
   return `${Math.round(v * 100)} %`;
 }
 
@@ -340,7 +348,7 @@ export class Pause {
     if (kind === 'ready') {
       this.root.innerHTML = `<div class="p-card ready"><h1>LISTO PARA DESPLEGAR</h1>
         <p>${this.touch ? 'Joystick a la izquierda para moverte, desliza a la derecha para mirar.' : 'Haz clic para capturar el ratón y empezar.'}</p>
-        ${this.touch ? '<p class="p-rotate">⟳ Pon el celular en horizontal</p>' : controlsHTML()}
+        ${this.touch ? '<p class="p-rotate">⟳ Pon el celular en horizontal</p>' : controlsHTML() + '<p class="lead small">Con touchpad: en Windows pon la sensibilidad del panel táctil en «Más sensible» para poder apuntar mientras te mueves, o mira con las flechas.</p>'}
         <button class="btn primary big" data-a="resume">EMPEZAR</button></div>`;
     } else {
       this.root.innerHTML = `<div class="p-card"><h1>PAUSA</h1>
