@@ -22,7 +22,7 @@ function wmat(kind, finish = 'standard') {
       if (fin.metal) { m.metalnessMap = null; m.metalness = 1; m.roughnessMap = null; m.roughness = fin.rough ?? 0.3; }
       break;
     case 'polymer': m = new THREE.MeshStandardMaterial({ ...tex('polymer'), color: 0x1a1b1d }); break;
-    case 'wood': m = new THREE.MeshStandardMaterial({ ...tex('gunwood'), color: 0xffffff }); break;
+    case 'wood': m = new THREE.MeshStandardMaterial({ ...tex('gunwood'), color: 0xa8826a }); break;
     case 'brass': m = new THREE.MeshStandardMaterial({ color: 0xc9a14a, metalness: 1, roughness: 0.3 }); break;
     case 'lens': m = new THREE.MeshStandardMaterial({ color: 0x0a1420, metalness: 0.9, roughness: 0.05, emissive: 0x112a44, emissiveIntensity: 0.6 }); break;
     case 'dot': m = new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 0.15, 0.1) }); break;
@@ -42,9 +42,19 @@ function cylG(ratio, seg) { const k = ratio.toFixed(3) + '|' + seg; if (!cylCach
 const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _e = new THREE.Euler();
 const HP = Math.PI / 2;
 
+/**
+ * Constructor de armas. Cada llamada (box/tube/cyl/cut/hole) se anota en `ops`: es la «receta» que el
+ * script de Blender (tools/blender/build_weapons.py) usa para generar la versión detallada (biseles,
+ * suavizado y tallados). Si esa versión está cargada se usa; si no, se construye con primitivas.
+ * Con record = true solo se anota (sin generar geometría).
+ */
 class Gun {
-  constructor(finish) { this.finish = finish; this.parts = new Map(); this.meta = { muzzle: [0, 0.05, -0.5], eject: [0.03, 0.07, -0.05], sight: [0, 0.1, 0], left: [0, 0, -0.25], adsDist: 0.2 }; }
+  constructor(finish, record = false) {
+    this.finish = finish; this.record = record; this.parts = new Map(); this.ops = [];
+    this.meta = { muzzle: [0, 0.05, -0.5], eject: [0.03, 0.07, -0.05], sight: [0, 0.1, 0], left: [0, 0, -0.25], adsDist: 0.2 };
+  }
   _add(geo, mat, part) {
+    if (this.record) return;
     const g = geo.index ? geo.toNonIndexed() : geo.clone(); g.applyMatrix4(_m);
     const k = part + '|' + mat;
     if (!this.parts.has(k)) this.parts.set(k, { part, mat, list: [] });
@@ -52,30 +62,56 @@ class Gun {
   }
   /** Caja centrada. */
   box(w, h, d, x, y, z, mat = 'steel', part = 'main', rx = 0, ry = 0, rz = 0) {
+    this.ops.push({ t: 'box', s: [w, h, d], p: [x, y, z], r: [rx, ry, rz], mat, part });
     _m.compose(_p.set(x, y, z), _q.setFromEuler(_e.set(rx, ry, rz)), _s.set(w, h, d)); this._add(UB, mat, part); return this;
   }
   /** Cilindro a lo largo de Z (cañones) centrado en (x,y,z). r2 = radio delantero. */
   tube(r, len, x, y, z, mat = 'steel', part = 'main', r2 = r, seg = 12) {
+    this.ops.push({ t: 'cyl', s: [r, len, r], k: r2 / r, seg, p: [x, y, z], r: [-HP, 0, 0], mat, part });
     _m.compose(_p.set(x, y, z), _q.setFromEuler(_e.set(-HP, 0, 0)), _s.set(r, len, r)); this._add(cylG(r2 / r, seg), mat, part); return this;
   }
   /** Cilindro con rotación libre (eje Y local). */
   cyl(r, len, x, y, z, mat = 'steel', part = 'main', rx = 0, ry = 0, rz = 0, seg = 10, r2 = r) {
+    this.ops.push({ t: 'cyl', s: [r, len, r], k: r2 / r, seg, p: [x, y, z], r: [rx, ry, rz], mat, part });
     _m.compose(_p.set(x, y, z), _q.setFromEuler(_e.set(rx, ry, rz)), _s.set(r, len, r)); this._add(cylG(r2 / r, seg), mat, part); return this;
   }
+  /**
+   * Perfil lateral extruido: pts = [[z, y], …] (vista de costado, el cañón hacia -Z) con grosor th centrado en x.
+   * Sirve para culatas, empuñaduras, cargadores curvos o cajones con su silueta real.
+   */
+  prof(pts, th, x = 0, mat = 'steel', part = 'main') {
+    this.ops.push({ t: 'prof', pts, th, x, mat, part });
+    if (this.record) return this;
+    const shape = new THREE.Shape(pts.map(([z, y]) => new THREE.Vector2(z, y)));
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: th, bevelEnabled: false, curveSegments: 4 });
+    // (u, v, w) de la extrusión → (x0 + th/2 - w, v, u): rotación propia, conserva la orientación de las caras
+    _m.set(0, 0, -1, x + th / 2, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1);
+    this._add(geo, mat, part); geo.dispose();
+    return this;
+  }
+  /** Tallado rectangular (solo en la versión de Blender): ventanas, ranuras, estrías. */
+  cut(w, h, d, x, y, z, part = 'main', rx = 0, ry = 0, rz = 0) { this.ops.push({ t: 'cut', s: [w, h, d], p: [x, y, z], r: [rx, ry, rz], part }); return this; }
+  /** Agujero cilíndrico (solo en la versión de Blender), eje Y local. */
+  hole(r, len, x, y, z, part = 'main', rx = 0, ry = 0, rz = 0, seg = 16) { this.ops.push({ t: 'hole', s: [r, len, r], seg, p: [x, y, z], r: [rx, ry, rz], part }); return this; }
   set(k, v) { this.meta[k] = v; return this; }
   /** Punto de giro de una pieza animable (p. ej. eje del cerrojo). */
   pivot(part, v) { (this.pivots ||= {})[part] = v; return this; }
-  build() {
+  /** tpl: lista [{part, mat, geometry}] de la versión de Blender (opcional). */
+  build(tpl = null) {
     const root = new THREE.Group(), groups = { main: root };
-    for (const { part, mat, list } of this.parts.values()) {
+    const pieces = tpl || [...this.parts.values()].map(({ part, mat, list }) => {
+      const geometry = mergeGeometries(list, false); list.forEach((g) => g.dispose());
+      return { part, mat, geometry };
+    });
+    for (const { part, mat, geometry } of pieces) {
       if (!groups[part]) { groups[part] = new THREE.Group(); groups[part].name = part; root.add(groups[part]); }
-      const mesh = new THREE.Mesh(mergeGeometries(list, false), wmat(mat, this.finish));
-      list.forEach((g) => g.dispose());
+      const mesh = new THREE.Mesh(geometry, wmat(mat, this.finish));
       mesh.castShadow = false; mesh.receiveShadow = false;
       const pv = this.pivots && this.pivots[part];
       if (pv) { groups[part].position.set(pv[0], pv[1], pv[2]); mesh.position.set(-pv[0], -pv[1], -pv[2]); }
       groups[part].add(mesh);
     }
+    root.userData.detailed = !!tpl;
     const u = root.userData;
     u.parts = groups;
     for (const k in groups) if (k !== 'main') groups[k].userData.base = groups[k].position.clone();
@@ -93,6 +129,17 @@ function ironSights(g, yBase, zFront, zRear, part = 'main') {
   g.box(0.008, 0.024, 0.01, -0.012, yBase + 0.016, zRear, 'dark', part); g.box(0.008, 0.024, 0.01, 0.012, yBase + 0.016, zRear, 'dark', part);
 }
 function redDot(g, y, z, holo = false) {
+  if (g.record) {
+    // versión detallada: cuerpo de tubo con visor redondo tallado, montura y perillas
+    g.box(0.03, 0.012, 0.05, 0, y + 0.006, z, 'dark');
+    g.box(0.044, 0.048, 0.058, 0, y + 0.036, z, 'dark');
+    g.hole(0.0175, 0.1, 0, y + 0.036, z, 'main', HP, 0, 0, 28);
+    g.cyl(0.0075, 0.014, 0.027, y + 0.036, z + 0.004, 'dark', 'main', 0, 0, HP, 14);
+    g.cyl(0.0075, 0.012, 0, y + 0.064, z + 0.004, 'dark', 'main', 0, 0, 0, 14);
+    g.box(0.004, 0.004, 0.001, 0, y + 0.036, z - 0.02, holo ? 'holo' : 'dot', 'optic');
+    if (holo) { g.box(0.016, 0.001, 0.001, 0, y + 0.036, z - 0.02, 'holo', 'optic'); g.box(0.001, 0.016, 0.001, 0, y + 0.036, z - 0.02, 'holo', 'optic'); }
+    return y + 0.036;
+  }
   g.box(0.04, 0.014, 0.075, 0, y + 0.007, z, 'dark');
   g.box(0.005, 0.046, 0.07, -0.022, y + 0.036, z, 'dark'); g.box(0.005, 0.046, 0.07, 0.022, y + 0.036, z, 'dark');
   g.box(0.049, 0.005, 0.07, 0, y + 0.061, z, 'dark');
@@ -124,17 +171,22 @@ function picatinny(g, y, z0, z1) {
 // ---------- modelos ----------
 const MODELS = {
   p9(g) {
-    g.box(0.028, 0.03, 0.18, 0, 0.012, -0.055, 'body');                       // armazón
-    g.box(0.03, 0.03, 0.195, 0, 0.042, -0.05, 'steel', 'slide');              // corredera
-    for (let i = 0; i < 6; i++) g.box(0.032, 0.022, 0.003, 0, 0.044, 0.02 + i * 0.006, 'dark', 'slide');
-    g.tube(0.007, 0.03, 0, 0.04, -0.155, 'dark');
-    g.box(0.031, 0.11, 0.05, 0, -0.05, 0.025, 'body', 'main', 0.28, 0, 0);     // empuñadura
-    g.box(0.024, 0.115, 0.034, 0, -0.052, 0.024, 'dark', 'mag', 0.28, 0, 0);
-    g.box(0.026, 0.01, 0.045, 0, -0.105, 0.042, 'polymer', 'mag', 0.28, 0, 0);
-    g.box(0.02, 0.014, 0.05, 0, -0.008, -0.105, 'body');                       // riel inferior
-    trigger(g, -0.03); ironSights(g, 0.057, -0.14, 0.035, 'slide');
-    g.set('muzzle', [0, 0.04, -0.175]).set('eject', [0.02, 0.05, -0.03]).set('sight', [0, 0.073, 0.035]).set('left', [-0.012, -0.045, 0.02])
-      .set('magPos', [0, -0.07, 0.03]).set('adsDist', 0.3);
+    // armazón de polímero con riel y guardamonte, empuñadura inclinada con cola de castor
+    g.prof([[0.045, 0.029], [-0.138, 0.029], [-0.142, 0.012], [-0.136, -0.004], [-0.062, -0.004], [-0.048, -0.012], [0.004, -0.012], [0.018, 0.0], [0.045, 0.004]], 0.028, 0, 'body');
+    g.prof([[0.004, -0.006], [0.044, 0.004], [0.056, 0.016], [0.062, 0.004], [0.078, -0.106], [0.07, -0.12], [0.026, -0.117], [0.016, -0.09], [0.019, -0.055], [0.008, -0.03]], 0.031, 0, 'body');
+    for (let i = 0; i < 5; i++) for (const s of [-1, 1]) g.cut(0.004, 0.004, 0.05, s * 0.0155, -0.03 - i * 0.016, 0.045, 'main', 0.28, 0, 0);   // textura de agarre
+    // corredera con estrías talladas y ventana de expulsión
+    g.prof([[0.046, 0.062], [-0.146, 0.062], [-0.152, 0.054], [-0.152, 0.03], [0.046, 0.03]], 0.03, 0, 'steel', 'slide');
+    for (let i = 0; i < 7; i++) for (const s of [-1, 1]) g.cut(0.006, 0.026, 0.0024, s * 0.0155, 0.045, 0.012 + i * 0.0048, 'slide');
+    g.cut(0.016, 0.014, 0.036, 0.012, 0.058, -0.036, 'slide');
+    g.hole(0.0046, 0.03, 0, 0.045, -0.15, 'slide', HP, 0, 0);
+    g.box(0.018, 0.016, 0.04, 0.002, 0.05, -0.036, 'dark');                    // recámara vista por la ventana
+    g.tube(0.0072, 0.02, 0, 0.045, -0.142, 'dark');
+    g.box(0.024, 0.11, 0.032, 0, -0.058, 0.04, 'dark', 'mag', 0.28, 0, 0);
+    g.box(0.03, 0.012, 0.044, 0, -0.118, 0.053, 'polymer', 'mag', 0.28, 0, 0);
+    trigger(g, -0.03); ironSights(g, 0.062, -0.14, 0.035, 'slide');
+    g.set('muzzle', [0, 0.045, -0.158]).set('eject', [0.02, 0.058, -0.036]).set('sight', [0, 0.078, 0.035]).set('left', [-0.012, -0.045, 0.02])
+      .set('magPos', [0, -0.07, 0.04]).set('adsDist', 0.3);
   },
   kestrel(g) {
     g.box(0.032, 0.032, 0.2, 0, 0.012, -0.06, 'steel');
@@ -150,42 +202,75 @@ const MODELS = {
       .set('magPos', [0, -0.08, 0.03]).set('adsDist', 0.3);
   },
   mk4(g) {
-    g.box(0.04, 0.05, 0.2, 0, 0.045, -0.03, 'body');                           // cajón superior e inferior
-    g.box(0.036, 0.035, 0.15, 0, 0.012, -0.01, 'body');
-    g.box(0.05, 0.05, 0.26, 0, 0.05, -0.26, 'body');                           // guardamanos
-    for (let i = 0; i < 6; i++) { g.box(0.052, 0.012, 0.026, 0, 0.05, -0.16 - i * 0.04, 'dark'); }
-    picatinny(g, 0.078, 0.06, -0.38);
-    g.tube(0.009, 0.2, 0, 0.05, -0.48, 'steel');
-    g.tube(0.012, 0.05, 0, 0.05, -0.585, 'dark', 'main', 0.011);               // apagallamas
-    g.box(0.012, 0.045, 0.012, 0, 0.085, -0.4, 'dark');                        // punto de mira abatible
-    g.tube(0.014, 0.19, 0, 0.045, 0.165, 'steel');                             // tubo de culata
-    g.box(0.036, 0.075, 0.12, 0, 0.03, 0.26, 'polymer'); g.box(0.036, 0.11, 0.03, 0, 0.012, 0.325, 'polymer');
-    pistolGrip(g, 'polymer'); trigger(g);
-    g.box(0.026, 0.14, 0.052, 0, -0.07, -0.085, 'dark', 'mag', 0.14, 0, 0);    // cargador curvo
-    g.box(0.026, 0.07, 0.05, 0, -0.16, -0.1, 'dark', 'mag', 0.32, 0, 0);
-    g.box(0.014, 0.014, 0.06, 0, 0.074, 0.075, 'steel', 'slide');              // palanca de montar
-    g.box(0.008, 0.03, 0.06, 0.022, 0.05, -0.04, 'dark');                      // ventana de expulsión
-    const y = redDot(g, 0.08, -0.02);
+    // cajón inferior con brocal del cargador
+    g.prof([[0.075, 0.03], [0.075, 0.004], [0.05, -0.012], [-0.045, -0.012], [-0.052, -0.034], [-0.128, -0.034], [-0.133, -0.006], [-0.138, 0.03]], 0.034, 0, 'body');
+    // cajón superior con ventana de expulsión, portacerrojo visible y asistente de cierre
+    g.box(0.04, 0.044, 0.21, 0, 0.052, -0.03, 'body');
+    g.cut(0.014, 0.02, 0.062, 0.02, 0.051, -0.035);
+    g.box(0.03, 0.016, 0.058, 0.002, 0.051, -0.035, 'bright');
+    g.cyl(0.0085, 0.022, 0.026, 0.062, 0.035, 'body', 'main', 0, 0, HP, 16);
+    picatinny(g, 0.077, 0.07, -0.14);
+    // guardamanos M-LOK con ranuras talladas y riel superior
+    g.box(0.05, 0.052, 0.3, 0, 0.05, -0.285, 'body');
+    for (let i = 0; i < 5; i++) g.cut(0.07, 0.011, 0.032, 0, 0.044, -0.18 - i * 0.05);
+    for (let i = 0; i < 4; i++) g.cut(0.016, 0.03, 0.032, 0, 0.026, -0.205 - i * 0.05);
+    picatinny(g, 0.079, -0.14, -0.43);
+    // cañón, bloque de gases y freno de boca con puertos
+    g.tube(0.0085, 0.17, 0, 0.05, -0.515, 'steel');
+    g.box(0.022, 0.026, 0.024, 0, 0.053, -0.452, 'dark');
+    g.tube(0.013, 0.055, 0, 0.05, -0.6, 'dark', 'main', 0.012, 16);
+    for (let i = 0; i < 3; i++) g.hole(0.0042, 0.04, 0, 0.05, -0.585 - i * 0.012, 'main', 0, 0, HP, 12);
+    g.hole(0.0045, 0.08, 0, 0.05, -0.6, 'main', HP, 0, 0, 12);
+    g.box(0.012, 0.042, 0.012, 0, 0.088, -0.41, 'dark');                       // punto de mira abatible
+    // culata ajustable con hueco aligerado y cantonera
+    g.tube(0.014, 0.19, 0, 0.048, 0.165, 'steel');
+    g.prof([[0.17, 0.074], [0.33, 0.064], [0.338, 0.05], [0.338, -0.04], [0.322, -0.05], [0.27, -0.022], [0.2, 0.016], [0.17, 0.022]], 0.038, 0, 'polymer');
+    g.cut(0.05, 0.028, 0.05, 0, 0.015, 0.275);
+    g.box(0.04, 0.094, 0.012, 0, 0.008, 0.337, 'dark');
+    // empuñadura inclinada y guardamonte
+    g.prof([[0.012, -0.01], [0.05, -0.01], [0.085, -0.112], [0.072, -0.124], [0.046, -0.12], [0.03, -0.07]], 0.03, 0, 'polymer');
+    for (let i = 0; i < 4; i++) g.cut(0.04, 0.006, 0.012, 0, -0.045 - i * 0.018, 0.026 + i * 0.006, 'main', 0.35, 0, 0);
+    trigger(g);
+    // cargador curvo y su base
+    g.prof([[-0.066, -0.008], [-0.118, -0.008], [-0.126, -0.07], [-0.142, -0.13], [-0.16, -0.172], [-0.112, -0.188], [-0.097, -0.135], [-0.08, -0.07]], 0.024, 0, 'dark', 'mag');
+    g.prof([[-0.108, -0.184], [-0.164, -0.168], [-0.17, -0.18], [-0.112, -0.197]], 0.028, 0, 'polymer', 'mag');
+    g.box(0.014, 0.014, 0.06, 0, 0.076, 0.075, 'steel', 'slide');              // palanca de montar
+    const y = redDot(g, 0.084, -0.02);
     g.set('muzzle', [0, 0.05, -0.61]).set('eject', [0.03, 0.055, -0.04]).set('sight', [0, y, 0.02]).set('left', [-0.005, 0.01, -0.27])
       .set('magPos', [0, -0.1, -0.09]).set('adsDist', 0.18);
   },
   akv(g) {
-    g.box(0.038, 0.058, 0.25, 0, 0.035, -0.03, 'steel');                       // cajón estampado
-    g.box(0.04, 0.02, 0.24, 0, 0.072, -0.03, 'dark');                          // tapa
-    g.box(0.044, 0.045, 0.17, 0, 0.03, -0.24, 'wood');                         // guardamanos de madera
-    g.box(0.036, 0.03, 0.15, 0, 0.07, -0.25, 'wood');
+    // cajón estampado con remaches, tapa nervada y ventana de expulsión
+    g.prof([[0.09, 0.064], [-0.16, 0.064], [-0.16, 0.012], [-0.12, 0.006], [0.06, 0.006], [0.09, 0.02]], 0.038, 0, 'steel');
+    g.prof([[0.095, 0.08], [0.085, 0.088], [-0.15, 0.084], [-0.155, 0.064], [0.095, 0.064]], 0.036, 0, 'dark');
+    for (let i = 0; i < 6; i++) g.cut(0.04, 0.002, 0.004, 0, 0.087, 0.06 - i * 0.04);   // nervios de la tapa
+    g.cut(0.012, 0.022, 0.078, 0.019, 0.05, -0.03);
+    g.box(0.03, 0.018, 0.07, 0, 0.05, -0.03, 'bright', 'slide');               // portacerrojo (se mueve al montar)
+    g.box(0.03, 0.012, 0.035, 0.032, 0.05, 0.0, 'bright', 'slide');            // manivela
+    g.box(0.004, 0.012, 0.09, -0.0205, 0.04, -0.01, 'steel');                  // selector
+    for (let i = 0; i < 4; i++) for (const s of [-1, 1]) g.cyl(0.003, 0.004, s * 0.0195, 0.02, -0.12 + i * 0.06, 'dark', 'main', 0, 0, HP, 8);
+    // guardamanos de madera con su forma y abrazaderas
+    g.prof([[-0.16, 0.06], [-0.33, 0.058], [-0.336, 0.03], [-0.33, 0.01], [-0.16, 0.006]], 0.046, 0, 'wood');
+    for (let i = 0; i < 4; i++) for (const s of [-1, 1]) g.cut(0.006, 0.004, 0.014, s * 0.023, 0.03, -0.2 - i * 0.03);
+    g.prof([[-0.165, 0.094], [-0.33, 0.09], [-0.335, 0.07], [-0.165, 0.07]], 0.036, 0, 'wood');
+    g.box(0.05, 0.064, 0.008, 0, 0.036, -0.338, 'steel');
+    // cañón, tubo de gases, bloque de gases y punto de mira triangular
     g.tube(0.009, 0.3, 0, 0.045, -0.47, 'steel');
-    g.tube(0.007, 0.2, 0, 0.074, -0.4, 'steel');                               // tubo de gases
-    g.box(0.016, 0.05, 0.02, 0, 0.065, -0.5, 'dark'); g.box(0.012, 0.04, 0.014, 0, 0.09, -0.58, 'dark');
+    g.tube(0.0075, 0.2, 0, 0.08, -0.42, 'steel');
+    g.prof([[-0.5, 0.09], [-0.522, 0.09], [-0.53, 0.036], [-0.492, 0.036]], 0.018, 0, 'dark');
+    g.prof([[-0.56, 0.046], [-0.6, 0.046], [-0.59, 0.106], [-0.574, 0.106]], 0.014, 0, 'dark');
+    g.hole(0.012, 0.02, 0, 0.09, -0.582, 'main', 0, 0, HP, 16);                // aro del punto de mira
     g.tube(0.012, 0.045, 0, 0.045, -0.635, 'dark', 'main', 0.013);
-    g.box(0.034, 0.06, 0.24, 0, 0.02, 0.2, 'wood', 'main', -0.1, 0, 0);        // culata de madera
-    g.box(0.036, 0.11, 0.02, 0, 0.0, 0.325, 'dark');
-    g.box(0.03, 0.105, 0.042, 0, -0.055, 0.03, 'wood', 'main', 0.32, 0, 0); trigger(g);
-    g.box(0.028, 0.1, 0.06, 0, -0.045, -0.09, 'dark', 'mag', 0.2, 0, 0);       // cargador «banana»
-    g.box(0.028, 0.1, 0.058, 0, -0.125, -0.125, 'dark', 'mag', 0.55, 0, 0);
-    g.box(0.028, 0.06, 0.056, 0, -0.185, -0.175, 'dark', 'mag', 0.85, 0, 0);
-    g.box(0.03, 0.012, 0.035, 0.03, 0.062, -0.02, 'bright', 'slide');          // manivela del cerrojo
-    g.box(0.03, 0.02, 0.012, 0, 0.09, -0.12, 'dark');                          // alza
+    g.hole(0.0045, 0.06, 0, 0.045, -0.635, 'main', HP, 0, 0, 12);
+    // culata de madera con su silueta, cantonera y empuñadura
+    g.prof([[0.09, 0.06], [0.32, 0.036], [0.336, 0.03], [0.336, -0.07], [0.32, -0.076], [0.15, -0.02], [0.09, 0.0]], 0.036, 0, 'wood');
+    g.box(0.038, 0.11, 0.012, 0, -0.02, 0.339, 'steel');
+    g.prof([[0.03, 0.006], [0.06, 0.006], [0.088, -0.1], [0.075, -0.11], [0.05, -0.105], [0.03, -0.03]], 0.03, 0, 'wood');
+    trigger(g);
+    // cargador «banana» con nervios
+    g.prof([[-0.06, 0.008], [-0.115, 0.008], [-0.125, -0.05], [-0.15, -0.12], [-0.19, -0.18], [-0.235, -0.208], [-0.2, -0.226], [-0.15, -0.205], [-0.11, -0.15], [-0.085, -0.08]], 0.028, 0, 'dark', 'mag');
+    for (let i = 0; i < 3; i++) for (const s of [-1, 1]) g.cut(0.004, 0.05, 0.006, s * 0.014, -0.06 - i * 0.045, -0.105 - i * 0.03, 'mag', 0.45 + i * 0.12, 0, 0);
+    g.box(0.03, 0.02, 0.012, 0, 0.094, -0.12, 'dark');                         // alza
     g.set('muzzle', [0, 0.045, -0.66]).set('eject', [0.03, 0.06, -0.03]).set('sight', [0, 0.106, -0.12]).set('left', [-0.005, 0.0, -0.25])
       .set('magPos', [0, -0.1, -0.11]).set('adsDist', 0.3);
   },
@@ -374,15 +459,53 @@ const MODELS = {
   },
 };
 
+// ---------- detalles extra (se ven en la versión de Blender) ----------
+const EXTRA = {
+  longbow(g) {
+    for (let i = 0; i < 3; i++) g.hole(0.0055, 0.06, 0, 0.06, -0.735 - i * 0.016, 'main', 0, 0, HP, 12);   // puertos del freno
+    for (const [x, y] of [[0, 0.0115], [0.0112, 0], [-0.0112, 0]]) g.cut(0.0035, 0.0035, 0.3, x, 0.06 + y, -0.45);  // cañón estriado
+  },
+  hammer(g) { for (let i = 0; i < 6; i++) g.hole(0.0042, 0.012, 0, 0.071, -0.27 - i * 0.035, 'main', 0, 0, 0, 10); },
+  chicago(g) { for (let i = 0; i < 3; i++) g.cut(0.0035, 0.01, 0.008, 0, 0.07, -0.462 - i * 0.011); },
+  sentinel(g) { for (let i = 0; i < 4; i++) g.cut(0.04, 0.003, 0.004, 0, 0.064, -0.68 - i * 0.025); },
+};
+/** Ánima tallada en la boca de las armas de fuego (no en las de energía). */
+function muzzleBore(g, id) {
+  if (['pulse', 'rail', 'p9', 'akv', 'mk4'].includes(id)) return;
+  const [x, y, z] = g.meta.muzzle;
+  g.hole(0.0042, 0.07, x, y, z, 'main', HP, 0, 0, 12);
+}
+function runBuilder(id, g) { MODELS[id](g); EXTRA[id]?.(g); muzzleBore(g, id); }
+
 export function registerWeaponModel(id, fn) { MODELS[id] = fn; }
+
+// ---------- versión detallada (Blender) ----------
+const detailed = new Map();   // id -> [{part, mat, geometry}]
+/** Registra las piezas detalladas de un arma (cargadas del GLB generado con Blender). */
+export function setDetailedWeapon(id, pieces) { detailed.set(id, pieces); }
+export function hasDetailedWeapons() { return detailed.size > 0; }
 
 /** Crea el modelo de un arma con el acabado cosmético indicado. */
 export function buildWeaponModel(id, finish = 'standard') {
-  const g = new Gun(finish);
-  (MODELS[id] || MODELS.mk4)(g);
-  const m = g.build();
+  const key = MODELS[id] ? id : 'mk4';
+  const tpl = detailed.get(key) || null;
+  const g = new Gun(finish, !!tpl);
+  runBuilder(key, g);
+  const m = g.build(tpl);
   m.userData.weaponId = id;
   return m;
 }
 
-export function disposeWeaponModel(m) { m.traverse((o) => { if (o.geometry) o.geometry.dispose(); }); }
+/** Recetas de todas las armas (para el script de Blender). */
+export function weaponSpecs() {
+  const out = {};
+  for (const id of Object.keys(MODELS)) {
+    const g = new Gun('standard', true);
+    runBuilder(id, g);
+    out[id] = { ops: g.ops, pivots: g.pivots || {} };
+  }
+  return out;
+}
+
+/** Libera la geometría propia (la detallada es compartida y se conserva). */
+export function disposeWeaponModel(m) { m.traverse((o) => { if (o.geometry && !m.userData.detailed) o.geometry.dispose(); }); }

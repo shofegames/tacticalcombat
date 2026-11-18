@@ -11,12 +11,12 @@ export const QUALITY = {
 export const DEFAULT_KEYS = {
   forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', crouch: 'KeyC', sprint: 'ShiftLeft',
   leanLeft: 'KeyQ', leanRight: 'KeyE', reload: 'KeyR', primary: 'Digit1', secondary: 'Digit2', swap: 'KeyX',
-  lethal: 'KeyG', tactical: 'KeyT', melee: 'KeyV', scoreboard: 'Tab', pause: 'Escape', interact: 'KeyF',
+  lethal: 'KeyG', tactical: 'KeyT', melee: 'KeyV', inspect: 'KeyI', scoreboard: 'Tab', pause: 'Escape', interact: 'KeyF',
 };
 export const KEY_LABELS = {
   forward: 'Avanzar', back: 'Retroceder', left: 'Izquierda', right: 'Derecha', jump: 'Saltar', crouch: 'Agacharse / deslizarse', sprint: 'Correr',
   leanLeft: 'Asomarse a la izquierda', leanRight: 'Asomarse a la derecha', reload: 'Recargar', primary: 'Arma principal', secondary: 'Arma secundaria',
-  swap: 'Cambiar de arma', lethal: 'Granada', tactical: 'Granada táctica', melee: 'Cuchillo', scoreboard: 'Marcador', interact: 'Armero (entrenamiento)',
+  swap: 'Cambiar de arma', lethal: 'Granada', tactical: 'Granada táctica', melee: 'Cuchillo', inspect: 'Inspeccionar arma', scoreboard: 'Marcador', interact: 'Armero (entrenamiento)',
 };
 /** Versión del esquema de teclas: al subirla se migran las asignaciones guardadas. */
 const KEYS_VERSION = 2;

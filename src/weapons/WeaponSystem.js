@@ -105,6 +105,10 @@ export class WeaponSystem {
     const u = Math.min(1, this.t / this.dur);
     switch (this.state) {
       case 'equip': if (u >= 1) this.state = 'ready'; break;
+      case 'inspect':
+        if (u >= 1 || (canAct && (input.mouse.leftPressed || input.mouse.right || input.hit('reload'))) || p.sprinting) { this.state = 'ready'; this.t = 0; }
+        else if (!this._insSnd && u > 0.64) { this._insSnd = true; audio.mech('boltUp'); }
+        break;
       case 'gear':
         if (this._gearCb && u >= this._gearAt) { const f = this._gearCb; this._gearCb = null; f(); }
         if (u >= 1) { this.state = 'equip'; this.t = 0; this.dur = 0.3; if (this.needCycle && s.mag > 0) this._startCycle(); }
@@ -141,6 +145,7 @@ export class WeaponSystem {
 
     // --- entradas ---
     if (canAct) {
+      if (input.hit('inspect') && this.state === 'ready' && this.ads < 0.1) { this.state = 'inspect'; this.t = 0; this.dur = 2.6; this._insSnd = false; audio.mech('equip'); }
       if (input.hit('reload')) this.startReload();
       if (input.hit('primary')) this.switchTo(0);
       if (input.hit('secondary')) this.switchTo(1);

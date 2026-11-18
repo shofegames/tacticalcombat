@@ -19,6 +19,7 @@ import { store, SKINS } from '../core/Settings.js';
 import { disposeMaterials } from '../gfx/Materials.js';
 import { disposeTextures } from '../gfx/Textures.js';
 import { Equipment } from '../weapons/Equipment.js';
+import { loadWeaponAssets } from '../weapons/WeaponAssets.js';
 import { DEFAULT_LOADOUT } from '../../shared/weapons.js';
 import { levelFromXp, isUnlocked, matchXp, unlocksBetween } from '../../shared/progression.js';
 
@@ -50,6 +51,8 @@ export class Game {
     this.effects.setEmitters(this.mapRenderer.emitters);
     this.effects.onShellLand = (p) => { if (this.distToPlayer(p) < 6) audio.mech('shellLand', p); };
     this.equipment = new Equipment(this);
+    onProgress(0.91, 'Cargando armas');
+    await loadWeaponAssets();
     onProgress(0.93, 'Desplegando unidades');
     this.mode = createMode(o.mode, this, o);
     // Jugador
@@ -297,7 +300,7 @@ export class Game {
     p.update(dt, inp, canAct && (live || this.mode.state === 'pre'));
     if (this.mode.state === 'pre') { p.vx = p.vz = 0; }
     this.equipment.playerInput(dt, inp, canAct && live);
-    if (p.alive) this.weapons.update(dt, inp, canAct && live);
+    if (p.alive) this.weapons.update(dt, inp, canAct && live && !p.mantle);
     if (canAct && this.opts.mode === 'training' && inp.hit('interact')) this.cycleArmory(1);
     if (canAct && inp.keys.has(store.settings.keys.scoreboard)) this.hud.showScoreboard(true); else this.hud.showScoreboard(false);
     // bots
@@ -319,7 +322,8 @@ export class Game {
     p.applyCamera(cam, this.time);
     if (p.alive) {
       this.vm.update({ dt, time: this.time, anim: this.weapons.anim, ads: this.weapons.ads, sprint: p.sprinting, speed: p.speed, onGround: p.body.onGround,
-        vy: p.vy, bobPhase: p.bobPhase, mdx: p.mdx, mdy: p.mdy, landed: p.landedImpact, bobScale: store.settings.headBob });
+        vy: p.vy, bobPhase: p.bobPhase, mdx: p.mdx, mdy: p.mdy, landed: p.landedImpact, bobScale: store.settings.headBob,
+        lower: p.mantle ? 1 : 0, tilt: p.slideT > 0 ? 1 : 0 });
       p.landedImpact = 0;
     } else this.vm.rig.visible = false;
     cam.getWorldDirection(_d);

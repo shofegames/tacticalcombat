@@ -10,6 +10,7 @@ import { Soldier } from '../src/entities/Soldier.js';
 import { WEAPONS } from '../shared/weapons.js';
 
 const q = new URLSearchParams(location.search);
+if (!q.has('basic')) await (await import('../src/weapons/WeaponAssets.js')).loadWeaponAssets();
 const v3 = (s, d) => (s ? s.split(',').map(Number) : d);
 const engine = new Engine(document.getElementById('c'));
 const def = getMapDef(q.get('map') || 'modern'), world = def.buildCollision();

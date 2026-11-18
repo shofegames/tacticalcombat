@@ -25,6 +25,59 @@ export class Player extends Combatant {
     this.leanK = 0; this.leanOff = 0; this.slideT = 0; this.slideCd = 0; this.crouchToggle = false; this.sprintToggle = false;
   }
 
+  /**
+   * Trepar a un borde (si arriba hay sitio) o saltar por encima de un obstáculo bajo y estrecho.
+   * Devuelve true si empieza la maniobra.
+   */
+  _tryMantle(air) {
+    const b = this.body, w = this.game.world, fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
+    const hit = w.raycast(b.x, b.y + 0.42, b.z, fx, 0, fz, 0.85, F_MOVE);
+    if (!hit || Math.abs(hit.ny) > 0.4) return false;
+    const d = hit.t + 0.08 + b.r;
+    const px = b.x + fx * d, pz = b.z + fz * d;
+    const top = w.groundAt(px, b.y + 2.6, pz);
+    const h = top - b.y;
+    if (!(h > 0.48 && h < (air ? 2.15 : 1.7))) return false;
+    if (!w.fits(b.x, b.y, b.z, b.r * 0.9, Math.min(3, h + BODY.crouchH))) return false;   // sitio para subir
+    let to = null, vault = false, crouch = false;
+    if (w.fits(px, top + 0.02, pz, b.r, BODY.standH)) to = { x: px, y: top, z: pz };
+    else if (w.fits(px, top + 0.02, pz, b.r, BODY.crouchH)) { to = { x: px, y: top, z: pz }; crouch = true; }
+    if ((!to || h < 1.15) && h < 1.3 && w.fits(px, top + 0.04, pz, b.r * 0.7, 0.6)) {
+      // obstáculo estrecho: buscar dónde caer al otro lado
+      for (const extra of [0.55, 0.85, 1.2]) {
+        const qx = b.x + fx * (d + extra), qz = b.z + fz * (d + extra), qy = w.groundAt(qx, top + 0.3, qz);
+        if (top - qy > 0.35 && qy > b.y - 2.5 && w.fits(qx, qy + 0.02, qz, b.r, BODY.standH)) { to = { x: qx, y: qy, z: qz }; vault = true; crouch = false; break; }
+      }
+    }
+    if (!to) return false;
+    this.mantle = { t: 0, dur: vault ? 0.5 : 0.3 + h * 0.14, vault, top, fx: b.x, fy: b.y, fz: b.z, tx: to.x, ty: to.y, tz: to.z, dx: fx, dz: fz };
+    if (crouch) { this.crouch = true; this.crouchToggle = true; }
+    this.vx = this.vy = this.vz = 0; this.sprinting = false; this.slideT = 0;
+    audio.jump(); audio.slide('concrete');
+    this.game.onNoise?.(this, 9);
+    return true;
+  }
+  _mantleStep(dt) {
+    const m = this.mantle, b = this.body;
+    m.t += dt / m.dur;
+    const t = Math.min(1, m.t), sm = (a, c, x) => { const k = Math.min(1, Math.max(0, (x - a) / (c - a))); return k * k * (3 - 2 * k); };
+    if (m.vault) {
+      const hk = sm(0, 1, t), lift = Math.sin(Math.PI * t) * (m.top + 0.25 - Math.max(m.fy, m.ty));
+      b.x = m.fx + (m.tx - m.fx) * hk; b.z = m.fz + (m.tz - m.fz) * hk;
+      b.y = m.fy + (m.ty - m.fy) * t + Math.max(0, lift);
+    } else {
+      const up = sm(0, 0.65, t), fw = sm(0.35, 1, t);
+      b.y = m.fy + (m.ty - m.fy) * up; b.x = m.fx + (m.tx - m.fx) * fw; b.z = m.fz + (m.tz - m.fz) * fw;
+    }
+    this.mantleK = Math.sin(Math.PI * t);
+    this.bobPhase += dt * 6;
+    if (t >= 1) {
+      this.mantle = null; this.mantleK = 0; b.onGround = true; b.y = m.ty;
+      this.vx = m.dx * (m.vault ? 3.5 : 1.5); this.vz = m.dz * (m.vault ? 3.5 : 1.5); this.vy = 0;
+      this.landK = 0.05; audio.land(this.surf, null, 0.5);
+    }
+  }
+
   /** Inclinación limitada por las paredes; expone el desplazamiento de la cabeza (leanOX/OZ) para la IA y los impactos. */
   _lean(dt, cos, sin) {
     const b = this.body, k = this.leanK;
@@ -47,6 +100,7 @@ export class Player extends Combatant {
     this.health = this.maxHealth; this.alive = true; this.recT = this.recC = this.recYawT = this.recYawC = 0;
     this.deathT = 0; this.stepSmooth = 0; this.spawnProtect = 1.5;
     this.leanK = this.leanOff = this.leanOX = this.leanOZ = 0; this.slideT = 0; this.crouchToggle = this.sprintToggle = false;
+    this.mantle = null; this.mantleK = 0;
   }
 
   addRecoil(v, h) { this.recT += v * DEG; this.recYawT += h * DEG; this.shake = Math.min(1, this.shake + v * 0.05); }
@@ -65,6 +119,8 @@ export class Player extends Combatant {
       this.pitch -= input.mouse.dy * sens * (s.invertY ? -1 : 1);
       this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch));
     }
+    // ---- trepando o saltando un obstáculo: movimiento guiado ----
+    if (this.mantle) { this._mantleStep(dt); this.regen(dt, this.game.time); return; }
     // ---- intención de movimiento ----
     let ix = 0, iz = 0;
     if (canAct) {
@@ -122,11 +178,14 @@ export class Player extends Combatant {
       this.vx += wx * MOVE.accel * dt; this.vz += wz * MOVE.accel * dt;
       const sp2 = Math.hypot(this.vx, this.vz);
       if (sp2 > max) { this.vx *= max / sp2; this.vz *= max / sp2; }
-      if (canAct && input.hit('jump') && w.fits(b.x, b.y + 0.05, b.z, b.r, b.h + 0.3)) {
-        this.vy = MOVE.jump; b.onGround = false; audio.jump();
+      if (canAct && input.hit('jump')) {
+        if (iz <= 0 && this._tryMantle(false)) return;
+        if (w.fits(b.x, b.y + 0.05, b.z, b.r, b.h + 0.3)) { this.vy = MOVE.jump; b.onGround = false; audio.jump(); }
       }
     } else {
       this.slideT = 0;
+      // en el aire con salto pulsado: agarrarse a un borde que quede a mano
+      if (canAct && input.down('jump') && iz <= 0 && this.vy < 2.5 && this._tryMantle(true)) return;
       this.vx += wx * MOVE.airAccel * dt; this.vz += wz * MOVE.airAccel * dt;
       const sp2 = Math.hypot(this.vx, this.vz), lim = Math.max(max, MOVE.walk);
       if (sp2 > lim) { this.vx *= lim / sp2; this.vz *= lim / sp2; }
@@ -204,6 +263,7 @@ export class Player extends Combatant {
     let y = b.y + eye + bobY - this.landK - this.stepSmooth;
     let pitch = this.pitch + this.recC, yaw = this.yaw + this.recYawC, roll = this.roll + Math.cos(this.bobPhase) * 0.004 * bobA;
     roll -= (this.leanOff / MOVE.lean) * 0.13;                         // inclinación al asomarse
+    if (this.mantleK) { pitch -= this.mantleK * 0.1; roll += this.mantleK * (this.mantle?.vault ? 0.07 : 0.03); }
     if (this.slideT > 0) roll += Math.sin((this.slideT / MOVE.slideTime) * Math.PI) * 0.05;
     if (!this.alive) {
       const k = Math.min(1, this.deathT / 0.7), e = k * k * (3 - 2 * k);

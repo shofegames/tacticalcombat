@@ -296,7 +296,8 @@ export function controlsHTML() {
     ['Moverse', `${k('forward')}${k('left')}${k('back')}${k('right')}`], ['Apuntar / disparar', '<kbd>Clic der.</kbd><kbd>Clic izq.</kbd>'],
     ['Correr', k('sprint')], ['Saltar', k('jump')], ['Agacharse', k('crouch')], ['Deslizarse', `${k('sprint')} + ${k('crouch')}`],
     ['Asomarse', `${k('leanLeft')}${k('leanRight')}`], ['Recargar', k('reload')], ['Cambiar de arma', `${k('primary')}${k('secondary')}${k('swap')} <kbd>Rueda</kbd>`],
-    ['Granada', k('lethal')], ['Granada táctica', k('tactical')], ['Cuchillo', k('melee')], ['Marcador', k('scoreboard')], ['Pausa', '<kbd>Esc</kbd>'],
+    ['Granada', k('lethal')], ['Granada táctica', k('tactical')], ['Cuchillo', k('melee')], ['Saltar muros / trepar', `${k('jump')} contra el borde`],
+    ['Inspeccionar arma', k('inspect')], ['Marcador', k('scoreboard')], ['Pausa', '<kbd>Esc</kbd>'],
   ];
   return `<div class="controls">${rows.map(([n, v]) => `<div><span>${n}</span><span>${v}</span></div>`).join('')}</div>`;
 }

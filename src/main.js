@@ -12,6 +12,8 @@ import { Backdrop } from './ui/Backdrop.js';
 import { TouchControls, wantsTouch } from './ui/Touch.js';
 import { PLAYABLE_MAPS } from '../shared/maps/index.js';
 import { GEAR } from '../shared/gear.js';
+import { loadWeaponAssets } from './weapons/WeaponAssets.js';
+loadWeaponAssets();   // descarga en segundo plano mientras se está en el menú
 
 const q = new URLSearchParams(location.search);
 // Primera vez en un dispositivo táctil: calidad baja (los móviles van más justos)

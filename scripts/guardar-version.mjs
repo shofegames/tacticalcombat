@@ -32,8 +32,18 @@ execSync('npx vite build --logLevel warn', { cwd: root, stdio: 'inherit' });
 const dist = join(root, 'dist');
 let html = readFileSync(join(dist, 'index.html'), 'utf8');
 html = html.replace(/<link rel="stylesheet"[^>]*href="(?:\.?\/)?([^"]+\.css)"[^>]*>/g, (_, f) => `<style>\n${readFileSync(join(dist, f), 'utf8')}\n</style>`);
+// recursos binarios (modelos .glb) referenciados desde el JS → data URI (fetch no funciona en file://)
+const binaries = existsSync(join(dist, 'assets')) ? readdirSync(join(dist, 'assets')).filter((f) => /\.(glb|bin)$/.test(f)) : [];
+const inlineBinaries = (js) => {
+  for (const f of binaries) {
+    const uri = `data:model/gltf-binary;base64,${readFileSync(join(dist, 'assets', f)).toString('base64')}`;
+    const esc = f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    js = js.replace(new RegExp(`(["'\`])(?:\\.?\\.?\\/)*(?:assets\\/)?${esc}\\1`, 'g'), `"${uri}"`);
+  }
+  return js;
+};
 html = html.replace(/<script type="module"[^>]*src="(?:\.?\/)?([^"]+\.js)"[^>]*><\/script>/g, (_, f) => {
-  const js = readFileSync(join(dist, f), 'utf8').replace(/<\/script/gi, '<\\/script');
+  const js = inlineBinaries(readFileSync(join(dist, f), 'utf8')).replace(/<\/script/gi, '<\\/script');
   return `<script type="module">\n${js}\n</script>`;
 });
 if (/(src|href)="(\.?\/)?assets\//.test(html)) throw new Error('Quedaron recursos sin incrustar en el HTML.');

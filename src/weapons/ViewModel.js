@@ -39,6 +39,7 @@ export class ViewModel {
     this.flashT = 0;
     // muelles de retroceso y balanceo
     this.kz = 0; this.kzv = 0; this.kr = 0; this.krv = 0; this.kroll = 0; this.krollv = 0; this.ky = 0; this.kyv = 0;
+    this.lowerK = 0; this.tiltK = 0;
     this.swayX = 0; this.swayY = 0; this.slideT = 0; this.landDip = 0; this.sprintK = 0; this.adsK = 0; this.moveK = 0;
     this.leftW = new THREE.Vector3(); this.rightW = new THREE.Vector3();
     this.visible = true;
@@ -169,6 +170,13 @@ export class ViewModel {
         const inn = Math.sin(Math.PI * t);
         leftT = _v2.copy(u.magPos); leftT.y += (top ? 0.12 : -0.14) * (1 - inn); leftT.z += 0.06 * (1 - inn);
       } else if (k === 'shellStart') leftT = _v2.copy(u.left).lerp(_v.copy(u.magPos).setY(u.magPos.y + (top ? 0.12 : -0.14)), sstep(0.3, 1, t));
+    } else if (k === 'inspect') {
+      // mirar el arma: girarla para ver el costado derecho, luego la parte de arriba, y volver
+      const a = sstep(0, 0.18, t) * (1 - sstep(0.45, 0.6, t)), b2 = sstep(0.5, 0.66, t) * (1 - sstep(0.86, 1, t));
+      const bob = Math.sin(t * Math.PI * 4) * 0.004;
+      ry += 0.95 * a - 0.35 * b2; rz += 0.55 * a + 0.2 * b2; rx += 0.08 * a + 0.75 * b2;
+      px += -0.09 * a - 0.05 * b2; py += 0.04 * a + 0.02 * b2 + bob; pz += 0.06 * a + 0.04 * b2;
+      if (sl && t > 0.62 && t < 0.84) slideZ = 0.035 * Math.sin(Math.PI * (t - 0.62) / 0.22);   // revisa la recámara
     } else if (k === 'cycle') {
       if (def.mode === 'bolt' && bolt) {
         const up = sstep(0.05, 0.22, t) * (1 - sstep(0.78, 0.95, t)), back = sstep(0.2, 0.42, t) * (1 - sstep(0.5, 0.76, t));
@@ -181,6 +189,11 @@ export class ViewModel {
       } else slideZ = 0.05 * Math.sin(Math.PI * t);
     }
     if (sl) { sl.position.copy(sl.userData.base); sl.position.z += slideZ; }
+    // trepar baja el arma; deslizarse la inclina
+    this.lowerK += ((ctx.lower || 0) - this.lowerK) * Math.min(1, dt * 14);
+    this.tiltK += ((ctx.tilt || 0) - this.tiltK) * Math.min(1, dt * 10);
+    py -= 0.12 * this.lowerK; rx -= 0.5 * this.lowerK; rz += 0.3 * this.lowerK;
+    rz += 0.32 * this.tiltK; px -= 0.025 * this.tiltK; py -= 0.015 * this.tiltK;
 
     this.pivot.position.set(px, py, pz); this.pivot.rotation.set(rx, ry, rz);
     // --- brazos ---
